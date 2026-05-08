@@ -11,7 +11,7 @@ def map_photos(
     from_date: str | None = None,
     to_date: str | None = None,
     folder: str | None = None,
-    limit: int = Query(default=2000, ge=1, le=10000),
+    limit: int = Query(default=10000, ge=1, le=10000),
 ):
     where = ["has_gps = true", "deleted = false"]
     params: list[object] = []
