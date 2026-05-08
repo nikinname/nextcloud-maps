@@ -23,6 +23,7 @@ services:
         condition: service_healthy
     volumes:
       - thumbnail_cache:/data/thumbnails
+      - backup_data:/data/backups
     expose:
       - "8000"
 
@@ -36,3 +37,4 @@ services:
 volumes:
   db_data:
   thumbnail_cache:
+  backup_data:

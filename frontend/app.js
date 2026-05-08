@@ -34,6 +34,7 @@ async function loadPhotos() {
   if (fromDate) params.set("from_date", fromDate);
   if (toDate) params.set("to_date", toDate);
   if (folder) params.set("folder", folder);
+  params.set("limit", "10000");
 
   const photos = await fetchJson(`/api/photos/map?${params.toString()}`);
   cluster.clearLayers();

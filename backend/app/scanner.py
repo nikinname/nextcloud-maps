@@ -1,9 +1,13 @@
+import logging
 from pathlib import PurePosixPath
 
 from app.config import get_settings
 from app.database import get_conn, init_db
 from app.exif_reader import read_exif
 from app.nextcloud_client import NextcloudClient, NextcloudFile
+
+
+logger = logging.getLogger(__name__)
 
 
 def _is_allowed_image(item: NextcloudFile) -> bool:
@@ -14,19 +18,29 @@ def _is_allowed_image(item: NextcloudFile) -> bool:
     return not any(item.path.startswith(excluded) for excluded in settings.excluded_paths)
 
 
-def scan(limit: int | None = None) -> dict[str, int]:
+def scan(limit: int | None = None, progress_every: int = 100) -> dict[str, int]:
     settings = get_settings()
+    logger.info("Initializing database")
     init_db()
     client = NextcloudClient(settings)
+    logger.info("Listing Nextcloud files under %s", settings.nextcloud_base_path)
     items = [item for item in client.list_recursive(settings.nextcloud_base_path) if _is_allowed_image(item)]
     if limit is not None:
         items = items[:limit]
     seen_paths = [item.path for item in items]
-    stats = {"seen": len(items), "inserted_or_updated": 0, "unchanged": 0, "exif_errors": 0}
+    stats = {
+        "seen": len(items),
+        "inserted_or_updated": 0,
+        "unchanged": 0,
+        "with_gps": 0,
+        "without_gps": 0,
+        "exif_errors": 0,
+    }
+    logger.info("Scan started: %s image files queued%s", len(items), f" (limit {limit})" if limit else "")
 
     with get_conn() as conn:
-        for item in items:
-            current = conn.execute("SELECT etag FROM photos WHERE path = %s", (item.path,)).fetchone()
+        for index, item in enumerate(items, start=1):
+            current = conn.execute("SELECT etag, has_gps FROM photos WHERE path = %s", (item.path,)).fetchone()
             if current and current["etag"] == item.etag:
                 conn.execute(
                     """
@@ -40,6 +54,21 @@ def scan(limit: int | None = None) -> dict[str, int]:
                     (item.file_id, client.web_url(item.path, item.file_id), item.path),
                 )
                 stats["unchanged"] += 1
+                if current["has_gps"]:
+                    stats["with_gps"] += 1
+                else:
+                    stats["without_gps"] += 1
+                if progress_every > 0 and (index == 1 or index % progress_every == 0 or index == len(items)):
+                    logger.info(
+                        "Scan progress: %s/%s processed, %s unchanged, %s inserted/updated, %s with GPS, %s without GPS, %s EXIF errors",
+                        index,
+                        len(items),
+                        stats["unchanged"],
+                        stats["inserted_or_updated"],
+                        stats["with_gps"],
+                        stats["without_gps"],
+                        stats["exif_errors"],
+                    )
                 continue
 
             exif = {
@@ -54,8 +83,14 @@ def scan(limit: int | None = None) -> dict[str, int]:
             }
             try:
                 exif = read_exif(client.download(item.path))
-            except Exception:
+            except Exception as exc:
                 stats["exif_errors"] += 1
+                logger.warning("EXIF read failed for %s: %s", item.path, exc)
+
+            if exif["has_gps"]:
+                stats["with_gps"] += 1
+            else:
+                stats["without_gps"] += 1
 
             conn.execute(
                 """
@@ -113,9 +148,32 @@ def scan(limit: int | None = None) -> dict[str, int]:
                 },
             )
             stats["inserted_or_updated"] += 1
-        conn.execute(
-            "UPDATE photos SET deleted = true WHERE path LIKE %s AND NOT (path = ANY(%s::text[]))",
-            (f"{settings.nextcloud_base_path.rstrip('/')}%", seen_paths),
-        )
+            if progress_every > 0 and (index == 1 or index % progress_every == 0 or index == len(items)):
+                logger.info(
+                    "Scan progress: %s/%s processed, %s unchanged, %s inserted/updated, %s with GPS, %s without GPS, %s EXIF errors",
+                    index,
+                    len(items),
+                    stats["unchanged"],
+                    stats["inserted_or_updated"],
+                    stats["with_gps"],
+                    stats["without_gps"],
+                    stats["exif_errors"],
+                )
+        if limit is None:
+            conn.execute(
+                "UPDATE photos SET deleted = true WHERE path LIKE %s AND NOT (path = ANY(%s::text[]))",
+                (f"{settings.nextcloud_base_path.rstrip('/')}%", seen_paths),
+            )
+        else:
+            logger.info("Limited scan: deletion marking skipped")
         conn.commit()
+    logger.info(
+        "Scan completed: %s seen, %s unchanged, %s inserted/updated, %s with GPS, %s without GPS, %s EXIF errors",
+        stats["seen"],
+        stats["unchanged"],
+        stats["inserted_or_updated"],
+        stats["with_gps"],
+        stats["without_gps"],
+        stats["exif_errors"],
+    )
     return stats

@@ -2,6 +2,7 @@ from datetime import datetime
 from fractions import Fraction
 from io import BytesIO
 from typing import Any
+import warnings
 
 from PIL import ExifTags, Image
 
@@ -38,7 +39,10 @@ def _parse_taken_at(value: Any) -> datetime | None:
 
 
 def read_exif(image_bytes: bytes) -> dict[str, Any]:
-    with Image.open(BytesIO(image_bytes)) as image:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+        image = Image.open(BytesIO(image_bytes))
+    with image:
         raw_exif = image.getexif()
         exif = {ExifTags.TAGS.get(key, key): value for key, value in raw_exif.items()}
         gps_ifd = raw_exif.get_ifd(TAGS["GPSInfo"]) if TAGS["GPSInfo"] in raw_exif else {}

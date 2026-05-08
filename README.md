@@ -33,6 +33,30 @@ docker compose exec backend python -m app.cli --limit 5
 
 In alternativa, dalla UI si puo' usare il pulsante di scansione, che chiama `POST /api/admin/scan`.
 
+## Backup e import
+
+Creare un backup del database applicativo:
+
+```bash
+docker compose exec backend python -m app.cli backup /data/backups/photomap-backup.json
+```
+
+Il file viene salvato nel volume Docker `backup_data`, montato in `/data/backups`.
+
+Importare un backup in una nuova installazione:
+
+```bash
+docker compose exec backend python -m app.cli import /data/backups/photomap-backup.json
+```
+
+L'import mostra un riepilogo del backup e chiede conferma esplicita. Per procedere bisogna digitare:
+
+```text
+IMPORT
+```
+
+Confermando, i dati attuali della tabella `photos` vengono eliminati e sostituiti con quelli del backup.
+
 ## Servizi
 
 - `db`: PostgreSQL/PostGIS.
@@ -47,6 +71,7 @@ Implementato:
 - Schema iniziale `photos` con campo PostGIS `geom`.
 - API `/api/health`, `/api/config`, `/api/photos/map`, `/api/photos/{id}`, `/api/admin/scan`.
 - Scanner incrementale basato su `etag`.
+- Backup/import JSON del database applicativo con conferma distruttiva sull'import.
 - Frontend Leaflet con clustering, filtri minimi e link Nextcloud.
 
 Ancora da completare:
