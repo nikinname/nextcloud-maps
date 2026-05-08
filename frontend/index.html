@@ -12,10 +12,16 @@
   <body>
     <header class="topbar">
       <div>
-        <h1>Nextcloud Photo Map</h1>
+        <div class="brandline">
+          <h1>Nextcloud Photo Map</h1>
+          <span class="version">v1.0</span>
+        </div>
         <p id="status">Caricamento mappa...</p>
       </div>
-      <button id="scanButton" type="button">Avvia scansione</button>
+      <div class="actions">
+        <button id="scanButton" type="button">Avvia scansione</button>
+        <a class="button secondary" href="/api/admin/backup">Scarica backup</a>
+      </div>
     </header>
     <main>
       <aside class="filters">
@@ -32,6 +38,17 @@
           <input id="folder" type="text" placeholder="/Photos">
         </label>
         <button id="applyFilters" type="button">Filtra</button>
+        <div class="toolbox">
+          <label>
+            Import backup
+            <input id="backupFile" type="file" accept="application/gzip,application/json,.json,.json.gz">
+          </label>
+          <label class="confirm">
+            <input id="confirmImport" type="checkbox">
+            Confermo sostituzione dati
+          </label>
+          <button id="importBackupButton" type="button">Carica backup</button>
+        </div>
       </aside>
       <section id="map" aria-label="Mappa foto"></section>
     </main>

@@ -1,3 +1,4 @@
+import gzip
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,8 +58,9 @@ def export_backup(path: str | Path) -> dict[str, Any]:
         },
         "photos": photos,
     }
-    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default), encoding="utf-8")
-    return {"path": str(output_path), "photos": len(photos)}
+    backup_json = json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default)
+    _write_text(output_path, backup_json)
+    return {"path": str(output_path), "photos": len(photos), "compressed": _is_gzip_path(output_path)}
 
 
 def inspect_backup(path: str | Path) -> dict[str, Any]:
@@ -86,23 +88,24 @@ def import_backup(path: str | Path, confirmed: bool = False) -> dict[str, Any]:
     with get_conn() as conn:
         conn.execute("TRUNCATE photos RESTART IDENTITY")
         if photos:
-            conn.executemany(
-                f"""
-                INSERT INTO photos ({columns_sql}, geom)
-                VALUES (
-                    {placeholders},
-                    CASE
-                      WHEN %(latitude)s::double precision IS NOT NULL AND %(longitude)s::double precision IS NOT NULL
-                      THEN ST_SetSRID(
-                        ST_MakePoint(%(longitude)s::double precision, %(latitude)s::double precision),
-                        4326
-                      )::geography
-                      ELSE NULL
-                    END
+            with conn.cursor() as cursor:
+                cursor.executemany(
+                    f"""
+                    INSERT INTO photos ({columns_sql}, geom)
+                    VALUES (
+                        {placeholders},
+                        CASE
+                          WHEN %(latitude)s::double precision IS NOT NULL AND %(longitude)s::double precision IS NOT NULL
+                          THEN ST_SetSRID(
+                            ST_MakePoint(%(longitude)s::double precision, %(latitude)s::double precision),
+                            4326
+                          )::geography
+                          ELSE NULL
+                        END
+                    )
+                    """,
+                    photos,
                 )
-                """,
-                photos,
-            )
             max_id = max(photo["id"] for photo in photos)
             conn.execute("SELECT setval(pg_get_serial_sequence('photos', 'id'), %s, true)", (max_id,))
         conn.commit()
@@ -112,9 +115,28 @@ def import_backup(path: str | Path, confirmed: bool = False) -> dict[str, Any]:
 
 def _load_payload(path: str | Path) -> dict[str, Any]:
     input_path = Path(path)
-    payload = json.loads(input_path.read_text(encoding="utf-8"))
+    payload = json.loads(_read_text(input_path))
     if payload.get("metadata", {}).get("version") != BACKUP_VERSION:
         raise ValueError("Unsupported backup version")
     if not isinstance(payload.get("photos"), list):
         raise ValueError("Invalid backup: photos must be a list")
     return payload
+
+
+def _is_gzip_path(path: Path) -> bool:
+    return path.suffix == ".gz"
+
+
+def _read_text(path: Path) -> str:
+    if _is_gzip_path(path):
+        with gzip.open(path, "rt", encoding="utf-8") as backup_file:
+            return backup_file.read()
+    return path.read_text(encoding="utf-8")
+
+
+def _write_text(path: Path, content: str) -> None:
+    if _is_gzip_path(path):
+        with gzip.open(path, "wt", encoding="utf-8") as backup_file:
+            backup_file.write(content)
+        return
+    path.write_text(content, encoding="utf-8")

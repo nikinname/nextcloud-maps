@@ -35,10 +35,15 @@ In alternativa, dalla UI si puo' usare il pulsante di scansione, che chiama `POS
 
 ## Backup e import
 
+Dal frontend sono disponibili:
+
+- `Scarica backup`, nella barra in alto;
+- `Import backup`, nel pannello filtri laterale, con checkbox di conferma sostituzione dati.
+
 Creare un backup del database applicativo:
 
 ```bash
-docker compose exec backend python -m app.cli backup /data/backups/photomap-backup.json
+docker compose exec backend python -m app.cli backup /data/backups/photomap-backup.json.gz
 ```
 
 Il file viene salvato nel volume Docker `backup_data`, montato in `/data/backups`.
@@ -46,7 +51,7 @@ Il file viene salvato nel volume Docker `backup_data`, montato in `/data/backups
 Importare un backup in una nuova installazione:
 
 ```bash
-docker compose exec backend python -m app.cli import /data/backups/photomap-backup.json
+docker compose exec backend python -m app.cli import /data/backups/photomap-backup.json.gz
 ```
 
 L'import mostra un riepilogo del backup e chiede conferma esplicita. Per procedere bisogna digitare:

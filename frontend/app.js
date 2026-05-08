@@ -1,13 +1,23 @@
 const statusEl = document.querySelector("#status");
 const scanButton = document.querySelector("#scanButton");
 const applyFilters = document.querySelector("#applyFilters");
+const backupFile = document.querySelector("#backupFile");
+const confirmImport = document.querySelector("#confirmImport");
+const importBackupButton = document.querySelector("#importBackupButton");
 let map;
 let cluster;
 
 async function fetchJson(url, options) {
   const response = await fetch(url, options);
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    let message = `${response.status} ${response.statusText}`;
+    try {
+      const payload = await response.json();
+      message = payload.detail || message;
+    } catch {
+      // Keep the HTTP status message when the response is not JSON.
+    }
+    throw new Error(message);
   }
   return response.json();
 }
@@ -81,6 +91,37 @@ applyFilters.addEventListener("click", () => {
   loadPhotos().catch((error) => {
     statusEl.textContent = `Errore caricamento: ${error.message}`;
   });
+});
+
+importBackupButton.addEventListener("click", async () => {
+  const file = backupFile.files[0];
+  if (!file) {
+    statusEl.textContent = "Seleziona un file backup JSON.";
+    return;
+  }
+  if (!confirmImport.checked) {
+    statusEl.textContent = "Conferma la sostituzione dei dati prima di importare.";
+    return;
+  }
+
+  importBackupButton.disabled = true;
+  statusEl.textContent = "Import backup in corso...";
+  const formData = new FormData();
+  formData.append("backup", file);
+  try {
+    const result = await fetchJson("/api/admin/backup/import?confirm=IMPORT", {
+      method: "POST",
+      body: formData,
+    });
+    statusEl.textContent = `Import completato: ${result.photos} foto caricate`;
+    confirmImport.checked = false;
+    backupFile.value = "";
+    await loadPhotos();
+  } catch (error) {
+    statusEl.textContent = `Errore import: ${error.message}`;
+  } finally {
+    importBackupButton.disabled = false;
+  }
 });
 
 init().catch((error) => {
