@@ -77,10 +77,10 @@ Implementato:
 - API `/api/health`, `/api/config`, `/api/photos/map`, `/api/photos/{id}`, `/api/admin/scan`.
 - Scanner incrementale basato su `etag`.
 - Backup/import JSON del database applicativo con conferma distruttiva sull'import.
+- Thumbnail generate al primo accesso, salvate localmente in `/data/thumbnails` e rigenerate se cambia `etag`.
 - Frontend Leaflet con clustering, filtri minimi e link Nextcloud.
 
 Ancora da completare:
 
-- cache miniature locale;
 - autenticazione/protezione endpoint admin;
 - gestione avanzata errori e report scansioni persistenti.

@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse
 
 from app.database import get_conn
+from app.thumbnails import get_or_create_thumbnail
 
 router = APIRouter(prefix="/api/photos", tags=["photos"])
 
@@ -30,7 +31,7 @@ def map_photos(
         rows = conn.execute(
             f"""
             SELECT id, filename, path, latitude, longitude, taken_at, nextcloud_url,
-                   CASE WHEN thumbnail_cache_path IS NULL THEN NULL ELSE '/api/photos/' || id || '/thumbnail' END AS thumbnail_url
+                   '/api/photos/' || id || '/thumbnail' AS thumbnail_url
             FROM photos
             WHERE {' AND '.join(where)}
             ORDER BY COALESCE(taken_at, last_modified) DESC NULLS LAST
@@ -52,4 +53,10 @@ def photo_detail(photo_id: int):
 
 @router.get("/{photo_id}/thumbnail")
 def thumbnail(photo_id: int):
-    raise HTTPException(status_code=501, detail="Thumbnail cache is not implemented yet")
+    try:
+        thumbnail_path = get_or_create_thumbnail(photo_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Thumbnail generation failed: {exc}") from exc
+    if not thumbnail_path:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    return FileResponse(thumbnail_path, media_type="image/jpeg")
