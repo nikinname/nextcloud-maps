@@ -1,0 +1,36 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data, caches and generated media
+data/
+thumbnails/
+thumbnail_cache/
+cache/
+*.sqlite
+*.sqlite3
+*.db
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Docker local overrides
+docker-compose.override.yml

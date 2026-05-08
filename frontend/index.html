@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Nextcloud Photo Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Nextcloud Photo Map</h1>
+        <p id="status">Caricamento mappa...</p>
+      </div>
+      <button id="scanButton" type="button">Avvia scansione</button>
+    </header>
+    <main>
+      <aside class="filters">
+        <label>
+          Dal
+          <input id="fromDate" type="date">
+        </label>
+        <label>
+          Al
+          <input id="toDate" type="date">
+        </label>
+        <label>
+          Cartella
+          <input id="folder" type="text" placeholder="/Photos">
+        </label>
+        <button id="applyFilters" type="button">Filtra</button>
+      </aside>
+      <section id="map" aria-label="Mappa foto"></section>
+    </main>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
