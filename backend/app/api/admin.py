@@ -14,7 +14,7 @@ BACKUP_DIR = Path("/data/backups")
 
 @router.post("/scan")
 def start_scan(background_tasks: BackgroundTasks, user: dict[str, Any] = Depends(current_user)):
-    background_tasks.add_task(scan, int(user["id"]))
+    background_tasks.add_task(scan, int(user["id"]), started_by=int(user["id"]))
     return {"status": "started"}
 
 
@@ -25,7 +25,7 @@ def start_scan_all(background_tasks: BackgroundTasks, admin: dict[str, Any] = De
     with get_conn() as conn:
         users = conn.execute("SELECT id FROM app_users WHERE disabled = false ORDER BY id").fetchall()
     for user in users:
-        background_tasks.add_task(scan, int(user["id"]))
+        background_tasks.add_task(scan, int(user["id"]), started_by=int(admin["id"]))
     return {"status": "started", "users": len(users), "admin": admin["id"]}
 
 
@@ -43,6 +43,85 @@ def list_users(admin: dict[str, Any] = Depends(current_admin)):
             """
         ).fetchall()
     return {"users": users, "admin": admin["id"]}
+
+
+@router.get("/report")
+def admin_report(admin: dict[str, Any] = Depends(current_admin)):
+    from app.database import get_conn
+
+    with get_conn() as conn:
+        users = conn.execute(
+            """
+            SELECT
+                u.id,
+                u.nextcloud_server_url,
+                u.nextcloud_login_name,
+                u.display_name,
+                u.role,
+                u.base_path,
+                u.disabled,
+                u.created_at,
+                u.last_login_at,
+                count(p.id) FILTER (WHERE p.deleted = false) AS photos_total,
+                count(p.id) FILTER (WHERE p.deleted = false AND p.has_gps = true) AS photos_with_gps,
+                count(p.id) FILTER (WHERE p.deleted = true) AS photos_deleted,
+                max(p.indexed_at) AS last_indexed_at
+            FROM app_users u
+            LEFT JOIN photos p ON p.user_id = u.id
+            GROUP BY u.id
+            ORDER BY u.id
+            """
+        ).fetchall()
+        running_jobs = conn.execute(
+            """
+            SELECT
+                j.id,
+                j.user_id,
+                u.nextcloud_login_name,
+                j.status,
+                j.started_at,
+                j.total_files,
+                j.processed_files,
+                j.inserted_or_updated,
+                j.unchanged,
+                j.with_gps,
+                j.without_gps,
+                j.exif_errors
+            FROM scan_jobs j
+            JOIN app_users u ON u.id = j.user_id
+            WHERE j.status = 'running'
+            ORDER BY j.started_at DESC
+            """
+        ).fetchall()
+        recent_jobs = conn.execute(
+            """
+            SELECT
+                j.id,
+                j.user_id,
+                u.nextcloud_login_name,
+                j.status,
+                j.started_at,
+                j.finished_at,
+                j.total_files,
+                j.processed_files,
+                j.inserted_or_updated,
+                j.unchanged,
+                j.with_gps,
+                j.without_gps,
+                j.exif_errors,
+                j.error_message
+            FROM scan_jobs j
+            JOIN app_users u ON u.id = j.user_id
+            ORDER BY j.started_at DESC
+            LIMIT 20
+            """
+        ).fetchall()
+    return {
+        "admin": admin["id"],
+        "users": users,
+        "runningJobs": running_jobs,
+        "recentJobs": recent_jobs,
+    }
 
 
 @router.get("/backup")

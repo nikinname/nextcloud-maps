@@ -47,6 +47,8 @@ GET /api/photos/{id}
 ```http
 POST /api/admin/scan
 POST /api/admin/scan/all
+GET /api/admin/report
 ```
 
 `/api/admin/scan` scansiona l'utente corrente. `/api/admin/scan/all`, backup e import richiedono ruolo admin.
+`/api/admin/report` restituisce utenti registrati, conteggi foto e scansioni in corso/recenti.

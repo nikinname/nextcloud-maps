@@ -54,6 +54,23 @@ CREATE TABLE IF NOT EXISTS photos (
     geom GEOGRAPHY(Point, 4326)
 );
 
+CREATE TABLE IF NOT EXISTS scan_jobs (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES app_users(id),
+    status TEXT NOT NULL DEFAULT 'running',
+    started_by BIGINT REFERENCES app_users(id),
+    started_at TIMESTAMPTZ DEFAULT now(),
+    finished_at TIMESTAMPTZ,
+    total_files INTEGER DEFAULT 0,
+    processed_files INTEGER DEFAULT 0,
+    inserted_or_updated INTEGER DEFAULT 0,
+    unchanged INTEGER DEFAULT 0,
+    with_gps INTEGER DEFAULT 0,
+    without_gps INTEGER DEFAULT 0,
+    exif_errors INTEGER DEFAULT 0,
+    error_message TEXT
+);
+
 ALTER TABLE photos ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES app_users(id);
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS disabled BOOLEAN DEFAULT FALSE;
 
@@ -82,6 +99,7 @@ CREATE INDEX IF NOT EXISTS idx_photos_taken_at ON photos(taken_at);
 CREATE INDEX IF NOT EXISTS idx_photos_geom ON photos USING GIST(geom);
 CREATE INDEX IF NOT EXISTS idx_photos_user_gps ON photos(user_id, has_gps, deleted);
 CREATE INDEX IF NOT EXISTS idx_photos_user_taken_at ON photos(user_id, taken_at);
+CREATE INDEX IF NOT EXISTS idx_scan_jobs_user_status ON scan_jobs(user_id, status, started_at DESC);
 """
 
 

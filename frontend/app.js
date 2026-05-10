@@ -10,6 +10,10 @@ const adminToolbox = document.querySelector("#adminToolbox");
 const nextcloudUrl = document.querySelector("#nextcloudUrl");
 const userBadge = document.querySelector("#userBadge");
 const applyFilters = document.querySelector("#applyFilters");
+const adminReportButton = document.querySelector("#adminReportButton");
+const closeReportButton = document.querySelector("#closeReportButton");
+const adminReportPanel = document.querySelector("#adminReportPanel");
+const adminReportContent = document.querySelector("#adminReportContent");
 const backupFile = document.querySelector("#backupFile");
 const confirmImport = document.querySelector("#confirmImport");
 const importBackupButton = document.querySelector("#importBackupButton");
@@ -114,6 +118,7 @@ function showLogin() {
   backupLink.hidden = true;
   adminToolbox.hidden = true;
   userBadge.hidden = true;
+  adminReportPanel.hidden = true;
   statusEl.textContent = "Accesso richiesto";
 }
 
@@ -126,6 +131,7 @@ function showApp() {
   logoutButton.hidden = false;
   backupLink.hidden = currentUser.role !== "admin";
   adminToolbox.hidden = currentUser.role !== "admin";
+  adminReportPanel.hidden = true;
   userBadge.hidden = false;
   userBadge.textContent = currentUser.displayName || currentUser.loginName;
   statusEl.textContent = "Caricamento foto...";
@@ -216,12 +222,139 @@ scanButton.addEventListener("click", async () => {
   try {
     await fetchJson("/api/admin/scan", { method: "POST" });
     statusEl.textContent = "Scansione in esecuzione. Aggiorna tra poco.";
+    if (!adminReportPanel.hidden) {
+      await loadAdminReport();
+    }
   } catch (error) {
     statusEl.textContent = `Errore scansione: ${error.message}`;
   } finally {
     scanButton.disabled = false;
   }
 });
+
+adminReportButton.addEventListener("click", async () => {
+  adminReportPanel.hidden = false;
+  adminReportPanel.style.display = "grid";
+  adminReportContent.innerHTML = `<p>Caricamento report...</p>`;
+  try {
+    await loadAdminReport();
+  } catch (error) {
+    adminReportContent.innerHTML = `<p>Errore report: ${escapeHtml(error.message)}</p>`;
+  }
+});
+
+closeReportButton.addEventListener("click", () => {
+  adminReportPanel.hidden = true;
+  adminReportPanel.style.display = "none";
+});
+
+async function loadAdminReport() {
+  const report = await fetchJson("/api/admin/report");
+  adminReportContent.innerHTML = reportHtml(report);
+}
+
+function reportHtml(report) {
+  return `
+    <section class="report-section">
+      <h3>Utenti registrati</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Utente</th>
+              <th>Ruolo</th>
+              <th>Foto</th>
+              <th>GPS</th>
+              <th>Ultimo login</th>
+              <th>Ultimo indice</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${report.users.map(userRowHtml).join("") || `<tr><td colspan="6">Nessun utente</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="report-section">
+      <h3>Scansioni in corso</h3>
+      ${jobsTable(report.runningJobs, true)}
+    </section>
+    <section class="report-section">
+      <h3>Ultime scansioni</h3>
+      ${jobsTable(report.recentJobs, false)}
+    </section>
+  `;
+}
+
+function userRowHtml(user) {
+  return `
+    <tr>
+      <td>
+        <strong>${escapeHtml(user.display_name || user.nextcloud_login_name)}</strong>
+        <span>${escapeHtml(user.nextcloud_server_url || "")}</span>
+      </td>
+      <td>${escapeHtml(user.role)}${user.disabled ? " / disabilitato" : ""}</td>
+      <td>${Number(user.photos_total || 0)}</td>
+      <td>${Number(user.photos_with_gps || 0)}</td>
+      <td>${formatDate(user.last_login_at)}</td>
+      <td>${formatDate(user.last_indexed_at)}</td>
+    </tr>
+  `;
+}
+
+function jobsTable(jobs, runningOnly) {
+  if (!jobs.length) {
+    return `<p>${runningOnly ? "Nessuna scansione in corso" : "Nessuna scansione registrata"}</p>`;
+  }
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Utente</th>
+            <th>Stato</th>
+            <th>Progresso</th>
+            <th>GPS</th>
+            <th>Errori EXIF</th>
+            <th>Avvio</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${jobs.map(jobRowHtml).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function jobRowHtml(job) {
+  const total = Number(job.total_files || 0);
+  const processed = Number(job.processed_files || 0);
+  const progress = total ? `${processed}/${total}` : `${processed}`;
+  return `
+    <tr>
+      <td>${escapeHtml(job.nextcloud_login_name)}</td>
+      <td>${escapeHtml(job.status)}</td>
+      <td>${progress}</td>
+      <td>${Number(job.with_gps || 0)}</td>
+      <td>${Number(job.exif_errors || 0)}</td>
+      <td>${formatDate(job.started_at)}</td>
+    </tr>
+  `;
+}
+
+function formatDate(value) {
+  return value ? new Date(value).toLocaleString("it-IT") : "-";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 applyFilters.addEventListener("click", () => {
   loadPhotos().catch((error) => {

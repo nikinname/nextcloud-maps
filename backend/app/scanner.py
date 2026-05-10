@@ -19,50 +19,154 @@ def _is_allowed_image(item: NextcloudFile, account: NextcloudAccount) -> bool:
     return not any(item.path.startswith(excluded) for excluded in account.exclude_paths)
 
 
-def scan(user_id: int | None = None, limit: int | None = None, progress_every: int = 100) -> dict[str, int]:
+def scan(
+    user_id: int | None = None,
+    limit: int | None = None,
+    progress_every: int = 100,
+    started_by: int | None = None,
+) -> dict[str, int]:
     logger.info("Initializing database")
     init_db()
     account = get_account(user_id) if user_id is not None else get_default_account()
+    job_id = _create_scan_job(account.user_id, started_by)
     client = NextcloudClient(account)
-    logger.info("Listing Nextcloud files for user %s under %s", account.login_name, account.base_path)
-    items = [item for item in client.list_recursive(account.base_path) if _is_allowed_image(item, account)]
-    if limit is not None:
-        items = items[:limit]
-    seen_paths = [item.path for item in items]
     stats = {
-        "seen": len(items),
+        "job_id": job_id,
+        "seen": 0,
         "inserted_or_updated": 0,
         "unchanged": 0,
         "with_gps": 0,
         "without_gps": 0,
         "exif_errors": 0,
     }
-    logger.info("Scan started: %s image files queued%s", len(items), f" (limit {limit})" if limit else "")
 
-    with get_conn() as conn:
-        for index, item in enumerate(items, start=1):
-            current = conn.execute(
-                "SELECT etag, has_gps FROM photos WHERE user_id = %s AND path = %s",
-                (account.user_id, item.path),
-            ).fetchone()
-            if current and current["etag"] == item.etag:
-                conn.execute(
-                    """
-                    UPDATE photos
-                    SET nextcloud_file_id = %s,
-                        nextcloud_url = %s,
-                        last_seen_at = now(),
-                        deleted = false
-                    WHERE user_id = %s AND path = %s
-                    """,
-                    (item.file_id, client.web_url(item.path, item.file_id), account.user_id, item.path),
-                )
-                stats["unchanged"] += 1
-                if current["has_gps"]:
+    try:
+        logger.info("Listing Nextcloud files for user %s under %s", account.login_name, account.base_path)
+        items = [item for item in client.list_recursive(account.base_path) if _is_allowed_image(item, account)]
+        if limit is not None:
+            items = items[:limit]
+        seen_paths = [item.path for item in items]
+        stats["seen"] = len(items)
+        _update_scan_job(job_id, total_files=len(items), **_job_stats(stats))
+        logger.info("Scan started: %s image files queued%s", len(items), f" (limit {limit})" if limit else "")
+
+        with get_conn() as conn:
+            for index, item in enumerate(items, start=1):
+                current = conn.execute(
+                    "SELECT etag, has_gps FROM photos WHERE user_id = %s AND path = %s",
+                    (account.user_id, item.path),
+                ).fetchone()
+                if current and current["etag"] == item.etag:
+                    conn.execute(
+                        """
+                        UPDATE photos
+                        SET nextcloud_file_id = %s,
+                            nextcloud_url = %s,
+                            last_seen_at = now(),
+                            deleted = false
+                        WHERE user_id = %s AND path = %s
+                        """,
+                        (item.file_id, client.web_url(item.path, item.file_id), account.user_id, item.path),
+                    )
+                    stats["unchanged"] += 1
+                    if current["has_gps"]:
+                        stats["with_gps"] += 1
+                    else:
+                        stats["without_gps"] += 1
+                    if progress_every > 0 and (index == 1 or index % progress_every == 0 or index == len(items)):
+                        _update_scan_job(job_id, processed_files=index, **_job_stats(stats))
+                        logger.info(
+                            "Scan progress: %s/%s processed, %s unchanged, %s inserted/updated, %s with GPS, %s without GPS, %s EXIF errors",
+                            index,
+                            len(items),
+                            stats["unchanged"],
+                            stats["inserted_or_updated"],
+                            stats["with_gps"],
+                            stats["without_gps"],
+                            stats["exif_errors"],
+                        )
+                    continue
+
+                exif = {
+                    "taken_at": None,
+                    "latitude": None,
+                    "longitude": None,
+                    "altitude": None,
+                    "camera_make": None,
+                    "camera_model": None,
+                    "orientation": None,
+                    "has_gps": False,
+                }
+                try:
+                    exif = read_exif(client.download(item.path))
+                except Exception as exc:
+                    stats["exif_errors"] += 1
+                    logger.warning("EXIF read failed for %s: %s", item.path, exc)
+
+                if exif["has_gps"]:
                     stats["with_gps"] += 1
                 else:
                     stats["without_gps"] += 1
+
+                conn.execute(
+                    """
+                    INSERT INTO photos (
+                        user_id, nextcloud_file_id, path, filename, etag, mime_type, size_bytes,
+                        last_modified, taken_at, latitude, longitude, altitude,
+                        camera_make, camera_model, orientation, has_gps, has_preview,
+                        nextcloud_url, indexed_at, last_seen_at, deleted, geom
+                    )
+                    VALUES (
+                        %(user_id)s, %(file_id)s, %(path)s, %(filename)s, %(etag)s, %(mime_type)s, %(size_bytes)s,
+                        %(last_modified)s, %(taken_at)s, %(latitude)s, %(longitude)s, %(altitude)s,
+                        %(camera_make)s, %(camera_model)s, %(orientation)s, %(has_gps)s, false,
+                        %(nextcloud_url)s, now(), now(), false,
+                        CASE
+                          WHEN %(latitude)s::double precision IS NOT NULL AND %(longitude)s::double precision IS NOT NULL
+                          THEN ST_SetSRID(
+                            ST_MakePoint(%(longitude)s::double precision, %(latitude)s::double precision),
+                            4326
+                          )::geography
+                          ELSE NULL
+                        END
+                    )
+                    ON CONFLICT (user_id, path) DO UPDATE SET
+                        nextcloud_file_id = EXCLUDED.nextcloud_file_id,
+                        filename = EXCLUDED.filename,
+                        etag = EXCLUDED.etag,
+                        mime_type = EXCLUDED.mime_type,
+                        size_bytes = EXCLUDED.size_bytes,
+                        last_modified = EXCLUDED.last_modified,
+                        taken_at = EXCLUDED.taken_at,
+                        latitude = EXCLUDED.latitude,
+                        longitude = EXCLUDED.longitude,
+                        altitude = EXCLUDED.altitude,
+                        camera_make = EXCLUDED.camera_make,
+                        camera_model = EXCLUDED.camera_model,
+                        orientation = EXCLUDED.orientation,
+                        has_gps = EXCLUDED.has_gps,
+                        nextcloud_url = EXCLUDED.nextcloud_url,
+                        indexed_at = now(),
+                        last_seen_at = now(),
+                        deleted = false,
+                        geom = EXCLUDED.geom
+                    """,
+                    {
+                        "user_id": account.user_id,
+                        "file_id": item.file_id,
+                        "path": item.path,
+                        "filename": item.filename,
+                        "etag": item.etag,
+                        "mime_type": item.mime_type,
+                        "size_bytes": item.size_bytes,
+                        "last_modified": item.last_modified,
+                        "nextcloud_url": client.web_url(item.path, item.file_id),
+                        **exif,
+                    },
+                )
+                stats["inserted_or_updated"] += 1
                 if progress_every > 0 and (index == 1 or index % progress_every == 0 or index == len(items)):
+                    _update_scan_job(job_id, processed_files=index, **_job_stats(stats))
                     logger.info(
                         "Scan progress: %s/%s processed, %s unchanged, %s inserted/updated, %s with GPS, %s without GPS, %s EXIF errors",
                         index,
@@ -73,118 +177,77 @@ def scan(user_id: int | None = None, limit: int | None = None, progress_every: i
                         stats["without_gps"],
                         stats["exif_errors"],
                     )
-                continue
-
-            exif = {
-                "taken_at": None,
-                "latitude": None,
-                "longitude": None,
-                "altitude": None,
-                "camera_make": None,
-                "camera_model": None,
-                "orientation": None,
-                "has_gps": False,
-            }
-            try:
-                exif = read_exif(client.download(item.path))
-            except Exception as exc:
-                stats["exif_errors"] += 1
-                logger.warning("EXIF read failed for %s: %s", item.path, exc)
-
-            if exif["has_gps"]:
-                stats["with_gps"] += 1
+            if limit is None:
+                conn.execute(
+                    """
+                    UPDATE photos
+                    SET deleted = true
+                    WHERE user_id = %s
+                      AND path LIKE %s
+                      AND NOT (path = ANY(%s::text[]))
+                    """,
+                    (account.user_id, f"{account.base_path.rstrip('/')}%", seen_paths),
+                )
             else:
-                stats["without_gps"] += 1
+                logger.info("Limited scan: deletion marking skipped")
+            conn.commit()
+        _finish_scan_job(job_id, "completed", processed_files=len(items), **_job_stats(stats))
+        logger.info(
+            "Scan completed: %s seen, %s unchanged, %s inserted/updated, %s with GPS, %s without GPS, %s EXIF errors",
+            stats["seen"],
+            stats["unchanged"],
+            stats["inserted_or_updated"],
+            stats["with_gps"],
+            stats["without_gps"],
+            stats["exif_errors"],
+        )
+        return stats
+    except Exception as exc:
+        _finish_scan_job(job_id, "failed", error_message=str(exc), **_job_stats(stats))
+        raise
 
-            conn.execute(
-                """
-                INSERT INTO photos (
-                    user_id, nextcloud_file_id, path, filename, etag, mime_type, size_bytes,
-                    last_modified, taken_at, latitude, longitude, altitude,
-                    camera_make, camera_model, orientation, has_gps, has_preview,
-                    nextcloud_url, indexed_at, last_seen_at, deleted, geom
-                )
-                VALUES (
-                    %(user_id)s, %(file_id)s, %(path)s, %(filename)s, %(etag)s, %(mime_type)s, %(size_bytes)s,
-                    %(last_modified)s, %(taken_at)s, %(latitude)s, %(longitude)s, %(altitude)s,
-                    %(camera_make)s, %(camera_model)s, %(orientation)s, %(has_gps)s, false,
-                    %(nextcloud_url)s, now(), now(), false,
-                    CASE
-                      WHEN %(latitude)s::double precision IS NOT NULL AND %(longitude)s::double precision IS NOT NULL
-                      THEN ST_SetSRID(
-                        ST_MakePoint(%(longitude)s::double precision, %(latitude)s::double precision),
-                        4326
-                      )::geography
-                      ELSE NULL
-                    END
-                )
-                ON CONFLICT (user_id, path) DO UPDATE SET
-                    nextcloud_file_id = EXCLUDED.nextcloud_file_id,
-                    filename = EXCLUDED.filename,
-                    etag = EXCLUDED.etag,
-                    mime_type = EXCLUDED.mime_type,
-                    size_bytes = EXCLUDED.size_bytes,
-                    last_modified = EXCLUDED.last_modified,
-                    taken_at = EXCLUDED.taken_at,
-                    latitude = EXCLUDED.latitude,
-                    longitude = EXCLUDED.longitude,
-                    altitude = EXCLUDED.altitude,
-                    camera_make = EXCLUDED.camera_make,
-                    camera_model = EXCLUDED.camera_model,
-                    orientation = EXCLUDED.orientation,
-                    has_gps = EXCLUDED.has_gps,
-                    nextcloud_url = EXCLUDED.nextcloud_url,
-                    indexed_at = now(),
-                    last_seen_at = now(),
-                    deleted = false,
-                    geom = EXCLUDED.geom
-                """,
-                {
-                    "user_id": account.user_id,
-                    "file_id": item.file_id,
-                    "path": item.path,
-                    "filename": item.filename,
-                    "etag": item.etag,
-                    "mime_type": item.mime_type,
-                    "size_bytes": item.size_bytes,
-                    "last_modified": item.last_modified,
-                    "nextcloud_url": client.web_url(item.path, item.file_id),
-                    **exif,
-                },
-            )
-            stats["inserted_or_updated"] += 1
-            if progress_every > 0 and (index == 1 or index % progress_every == 0 or index == len(items)):
-                logger.info(
-                    "Scan progress: %s/%s processed, %s unchanged, %s inserted/updated, %s with GPS, %s without GPS, %s EXIF errors",
-                    index,
-                    len(items),
-                    stats["unchanged"],
-                    stats["inserted_or_updated"],
-                    stats["with_gps"],
-                    stats["without_gps"],
-                    stats["exif_errors"],
-                )
-        if limit is None:
-            conn.execute(
-                """
-                UPDATE photos
-                SET deleted = true
-                WHERE user_id = %s
-                  AND path LIKE %s
-                  AND NOT (path = ANY(%s::text[]))
-                """,
-                (account.user_id, f"{account.base_path.rstrip('/')}%", seen_paths),
-            )
-        else:
-            logger.info("Limited scan: deletion marking skipped")
+
+def _create_scan_job(user_id: int, started_by: int | None) -> int:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO scan_jobs (user_id, started_by, status)
+            VALUES (%s, %s, 'running')
+            RETURNING id
+            """,
+            (user_id, started_by),
+        ).fetchone()
         conn.commit()
-    logger.info(
-        "Scan completed: %s seen, %s unchanged, %s inserted/updated, %s with GPS, %s without GPS, %s EXIF errors",
-        stats["seen"],
-        stats["unchanged"],
-        stats["inserted_or_updated"],
-        stats["with_gps"],
-        stats["without_gps"],
-        stats["exif_errors"],
-    )
-    return stats
+        return int(row["id"])
+
+
+def _update_scan_job(job_id: int, **values: object) -> None:
+    if not values:
+        return
+    assignments = ", ".join(f"{key} = %s" for key in values)
+    params = [*values.values(), job_id]
+    with get_conn() as conn:
+        conn.execute(f"UPDATE scan_jobs SET {assignments} WHERE id = %s", params)
+        conn.commit()
+
+
+def _finish_scan_job(job_id: int, status: str, **values: object) -> None:
+    assignments = ["status = %s", "finished_at = now()"]
+    params: list[object] = [status]
+    for key, value in values.items():
+        assignments.append(f"{key} = %s")
+        params.append(value)
+    params.append(job_id)
+    with get_conn() as conn:
+        conn.execute(f"UPDATE scan_jobs SET {', '.join(assignments)} WHERE id = %s", params)
+        conn.commit()
+
+
+def _job_stats(stats: dict[str, int]) -> dict[str, int]:
+    return {
+        "inserted_or_updated": stats["inserted_or_updated"],
+        "unchanged": stats["unchanged"],
+        "with_gps": stats["with_gps"],
+        "without_gps": stats["without_gps"],
+        "exif_errors": stats["exif_errors"],
+    }

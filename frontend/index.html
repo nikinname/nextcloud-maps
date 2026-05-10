@@ -53,6 +53,7 @@
         </label>
         <button id="applyFilters" type="button">Filtra</button>
         <div id="adminToolbox" class="toolbox">
+          <button id="adminReportButton" class="secondary-action" type="button">Report utenti</button>
           <label>
             Import backup
             <input id="backupFile" type="file" accept="application/gzip,application/json,.json,.json.gz">
@@ -65,6 +66,13 @@
         </div>
       </aside>
       <section id="map" aria-label="Mappa foto"></section>
+      <section id="adminReportPanel" class="admin-report" hidden>
+        <div class="report-header">
+          <h2>Report utenti</h2>
+          <button id="closeReportButton" class="secondary-action" type="button">Chiudi</button>
+        </div>
+        <div id="adminReportContent" class="report-content"></div>
+      </section>
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
