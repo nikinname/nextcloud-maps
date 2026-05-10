@@ -6,7 +6,7 @@ Il documento di progetto completo e' in `README_nextcloud_photo_map.md`.
 
 ## Avvio rapido
 
-1. Copiare `.env.example` in `.env`, compilare i dati Nextcloud iniziali e impostare `APP_SECRET_KEY` con un valore lungo e casuale.
+1. Copiare `.env.example` in `.env`, compilare `NEXTCLOUD_URL`, `ADMIN_NC_USERNAME` e impostare `APP_SECRET_KEY` con un valore lungo e casuale.
 2. Avviare lo stack:
 
 ```bash
@@ -16,10 +16,27 @@ docker compose up -d --build
 3. Aprire la web app:
 
 ```text
-http://localhost:8080
+https://localhost:8443
 ```
 
-4. Accedere dalla UI con Nextcloud. Alla prima partenza l'utente configurato in `.env` viene importato come admin iniziale.
+Con `CERT_MODE=selfsigned` il browser mostrera' un avviso sul certificato locale. In produzione, per Let's Encrypt, configurare nel `.env`:
+
+```env
+CERT_MODE=letsencrypt
+PUBLIC_HOSTNAME=maps.example.org
+HTTP_PORT=80
+HTTPS_PORT=443
+LETSENCRYPT_EMAIL=admin@example.org
+APP_BASE_URL=https://maps.example.org
+```
+
+La porta pubblica 80 e' necessaria per la verifica HTTP-01 di Let's Encrypt. Dopo aver puntato il DNS di `PUBLIC_HOSTNAME` al server, avviare:
+
+```bash
+docker compose up -d --build
+```
+
+4. Accedere dalla UI con Nextcloud. L'utente Nextcloud indicato in `ADMIN_NC_USERNAME` diventa admin di Nextcloud Maps Companion al primo login riuscito.
 
 5. Avviare una scansione manuale:
 

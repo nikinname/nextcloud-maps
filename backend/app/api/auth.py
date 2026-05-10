@@ -14,6 +14,7 @@ from app.users import get_or_create_user_from_nextcloud
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 PENDING_FLOWS: dict[str, dict[str, Any]] = {}
 FLOW_TTL_MINUTES = 10
+NEXTCLOUD_LOGIN_HEADERS = {"User-Agent": "Nextcloud Maps Companion"}
 
 
 class LoginStartRequest(BaseModel):
@@ -46,7 +47,7 @@ def start_nextcloud_login(payload: LoginStartRequest):
     settings = get_settings()
     server_url = str(payload.nextcloud_url or settings.nextcloud_url).rstrip("/")
     try:
-        response = httpx.post(f"{server_url}/index.php/login/v2", timeout=30)
+        response = httpx.post(f"{server_url}/index.php/login/v2", headers=NEXTCLOUD_LOGIN_HEADERS, timeout=30)
         response.raise_for_status()
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Nextcloud login flow failed: {exc}") from exc
@@ -77,7 +78,12 @@ def poll_nextcloud_login(payload: LoginPollRequest, response: Response):
 
     poll = flow["poll"]
     try:
-        nc_response = httpx.post(poll["endpoint"], data={"token": poll["token"]}, timeout=30)
+        nc_response = httpx.post(
+            poll["endpoint"],
+            data={"token": poll["token"]},
+            headers=NEXTCLOUD_LOGIN_HEADERS,
+            timeout=30,
+        )
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Nextcloud login poll failed: {exc}") from exc
 

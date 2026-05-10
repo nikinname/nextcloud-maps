@@ -64,6 +64,12 @@ h1 {
   padding: 4px 8px;
 }
 
+.codename {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 p {
   color: var(--muted);
   font-size: 14px;

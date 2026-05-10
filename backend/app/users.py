@@ -16,32 +16,25 @@ class NextcloudAccount:
     exclude_paths: tuple[str, ...]
 
 
-def bootstrap_env_user(conn, settings: Settings | None = None) -> int:
+def get_bootstrap_admin_username(settings: Settings | None = None) -> str:
     settings = settings or get_settings()
-    existing = conn.execute("SELECT id FROM app_users ORDER BY id LIMIT 1").fetchone()
-    if existing:
-        return int(existing["id"])
+    return settings.admin_nc_username.strip()
 
-    role = "admin"
+
+def promote_configured_admin(conn, settings: Settings | None = None) -> int | None:
+    admin_username = get_bootstrap_admin_username(settings)
+    if not admin_username:
+        return None
     row = conn.execute(
         """
-        INSERT INTO app_users (
-            nextcloud_server_url, nextcloud_login_name, role,
-            app_password_encrypted, base_path, exclude_paths
-        )
-        VALUES (%s, %s, %s, %s, %s, %s)
+        UPDATE app_users
+        SET role = 'admin', updated_at = now()
+        WHERE nextcloud_login_name = %s
         RETURNING id
         """,
-        (
-            str(settings.nextcloud_url).rstrip("/"),
-            settings.nextcloud_username,
-            role,
-            encrypt_secret(settings.nextcloud_app_password),
-            settings.nextcloud_base_path,
-            settings.nextcloud_exclude_paths,
-        ),
+        (admin_username,),
     ).fetchone()
-    return int(row["id"])
+    return int(row["id"]) if row else None
 
 
 def get_or_create_user_from_nextcloud(
@@ -56,7 +49,8 @@ def get_or_create_user_from_nextcloud(
 
     with get_conn() as conn:
         user_count = conn.execute("SELECT count(*) AS count FROM app_users").fetchone()["count"]
-        role = "admin" if user_count == 0 else "user"
+        settings = get_settings()
+        role = "admin" if login_name == get_bootstrap_admin_username(settings) or user_count == 0 else "user"
         row = conn.execute(
             """
             INSERT INTO app_users (
@@ -72,8 +66,10 @@ def get_or_create_user_from_nextcloud(
                 updated_at = now()
             RETURNING id, nextcloud_server_url, nextcloud_login_name, nextcloud_user_id, display_name, role, base_path
             """,
-            (normalized_server_url, login_name, nextcloud_user_id, display_name, role, encrypted_password, "/Photos"),
+            (normalized_server_url, login_name, nextcloud_user_id, display_name, role, encrypted_password, settings.nextcloud_base_path),
         ).fetchone()
+        if row["role"] == "admin":
+            conn.execute("UPDATE photos SET user_id = %s WHERE user_id IS NULL", (row["id"],))
         conn.commit()
         return row
 
@@ -110,9 +106,10 @@ def get_account(user_id: int) -> NextcloudAccount:
 def get_default_account() -> NextcloudAccount:
     settings = get_settings()
     with get_conn() as conn:
-        user_id = bootstrap_env_user(conn, settings)
-        conn.execute("UPDATE photos SET user_id = %s WHERE user_id IS NULL", (user_id,))
+        user_id = promote_configured_admin(conn, settings)
         conn.commit()
+    if user_id is None:
+        raise ValueError("No default account available. Log in with the configured admin user first.")
     return get_account(user_id)
 
 

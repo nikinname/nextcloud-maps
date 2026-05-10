@@ -29,12 +29,61 @@ services:
 
   frontend:
     build: ./frontend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CERT_MODE: ${CERT_MODE:-selfsigned}
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:-localhost}
+      HTTPS_PORT: ${HTTPS_PORT:-8443}
     depends_on:
       - backend
+    volumes:
+      - letsencrypt_data:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
     ports:
-      - "8082:80"
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+
+  certbot:
+    image: certbot/certbot:v2.11.0
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CERT_MODE: ${CERT_MODE:-selfsigned}
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:-localhost}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+    volumes:
+      - letsencrypt_data:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        if [ "$$CERT_MODE" != "letsencrypt" ]; then
+          echo "CERT_MODE=$$CERT_MODE: certbot disabled"
+          exit 0
+        fi
+        if [ -z "$$LETSENCRYPT_EMAIL" ] || [ "$$PUBLIC_HOSTNAME" = "localhost" ]; then
+          echo "LETSENCRYPT_EMAIL and PUBLIC_HOSTNAME must be configured for Let's Encrypt"
+          exit 1
+        fi
+        certbot certonly --webroot \
+          --webroot-path /var/www/certbot \
+          --non-interactive \
+          --agree-tos \
+          --email "$$LETSENCRYPT_EMAIL" \
+          --keep-until-expiring \
+          -d "$$PUBLIC_HOSTNAME"
+        while true; do
+          certbot renew --webroot --webroot-path /var/www/certbot --quiet
+          sleep 12h
+        done
 
 volumes:
   db_data:
   thumbnail_cache:
   backup_data:
+  letsencrypt_data:
+  certbot_webroot:

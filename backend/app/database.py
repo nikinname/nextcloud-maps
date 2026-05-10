@@ -95,8 +95,9 @@ def get_conn() -> Iterator[psycopg.Connection]:
 def init_db() -> None:
     with get_conn() as conn:
         conn.execute(SCHEMA_SQL)
-        from app.users import bootstrap_env_user
+        from app.users import promote_configured_admin
 
-        user_id = bootstrap_env_user(conn, get_settings())
-        conn.execute("UPDATE photos SET user_id = %s WHERE user_id IS NULL", (user_id,))
+        user_id = promote_configured_admin(conn, get_settings())
+        if user_id is not None:
+            conn.execute("UPDATE photos SET user_id = %s WHERE user_id IS NULL", (user_id,))
         conn.commit()

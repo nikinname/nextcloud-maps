@@ -8,8 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     nextcloud_url: AnyHttpUrl = "https://nextcloud.example.org"
-    nextcloud_username: str = "utente"
-    nextcloud_app_password: str = "app-password"
+    admin_nc_username: str = "utente"
     nextcloud_base_path: str = "/Photos"
     nextcloud_exclude_paths: str = ""
     image_extensions: str = ".jpg,.jpeg,.png,.heic,.webp"

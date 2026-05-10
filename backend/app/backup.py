@@ -120,9 +120,31 @@ def import_backup(path: str | Path, confirmed: bool = False) -> dict[str, Any]:
             max_user_id = max(user["id"] for user in users)
             conn.execute("SELECT setval(pg_get_serial_sequence('app_users', 'id'), %s, true)", (max_user_id,))
         else:
-            from app.users import bootstrap_env_user
+            from app.config import get_settings
+            from app.crypto import encrypt_secret
+            from app.users import promote_configured_admin
 
-            default_user_id = bootstrap_env_user(conn)
+            settings = get_settings()
+            default_user_id = promote_configured_admin(conn)
+            if default_user_id is None:
+                row = conn.execute(
+                    """
+                    INSERT INTO app_users (
+                        nextcloud_server_url, nextcloud_login_name, role,
+                        app_password_encrypted, base_path, exclude_paths
+                    )
+                    VALUES (%s, %s, 'admin', %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (
+                        str(settings.nextcloud_url).rstrip("/"),
+                        settings.admin_nc_username,
+                        encrypt_secret("login-required"),
+                        settings.nextcloud_base_path,
+                        settings.nextcloud_exclude_paths,
+                    ),
+                ).fetchone()
+                default_user_id = int(row["id"])
             conn.execute("TRUNCATE photos RESTART IDENTITY")
             for photo in photos:
                 photo["user_id"] = default_user_id
