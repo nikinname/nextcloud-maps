@@ -6,7 +6,7 @@ from xml.etree import ElementTree
 
 import httpx
 
-from app.config import Settings
+from app.users import NextcloudAccount
 
 
 DAV_NS = {"d": "DAV:", "nc": "http://nextcloud.org/ns", "oc": "http://owncloud.org/ns"}
@@ -26,15 +26,15 @@ class NextcloudFile:
 
 
 class NextcloudClient:
-    def __init__(self, settings: Settings):
-        self.settings = settings
-        self.base_url = str(settings.nextcloud_url).rstrip("/")
-        self.auth = (settings.nextcloud_username, settings.nextcloud_app_password)
+    def __init__(self, account: NextcloudAccount):
+        self.account = account
+        self.base_url = account.server_url.rstrip("/")
+        self.auth = (account.login_name, account.app_password)
 
     def _dav_url(self, path: str) -> str:
         normalized = "/" + path.strip("/")
         quoted_path = quote(normalized, safe="/")
-        return f"{self.base_url}/remote.php/dav/files/{quote(self.settings.nextcloud_username)}/{quoted_path}"
+        return f"{self.base_url}/remote.php/dav/files/{quote(self.account.login_name)}/{quoted_path}"
 
     def web_url(self, path: str, file_id: str | None = None) -> str:
         directory = quote(str(PurePosixPath(path).parent), safe="/")
@@ -74,7 +74,7 @@ class NextcloudClient:
     def _parse_propfind(self, xml_text: str) -> list[NextcloudFile]:
         root = ElementTree.fromstring(xml_text)
         files: list[NextcloudFile] = []
-        dav_prefix = f"/remote.php/dav/files/{self.settings.nextcloud_username}"
+        dav_prefix = f"/remote.php/dav/files/{self.account.login_name}"
         for response in root.findall("d:response", DAV_NS):
             href = response.findtext("d:href", default="", namespaces=DAV_NS)
             prop = response.find("d:propstat/d:prop", DAV_NS)

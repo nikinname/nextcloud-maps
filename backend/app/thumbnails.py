@@ -7,22 +7,23 @@ from PIL import Image, ImageOps
 from app.config import get_settings
 from app.database import get_conn
 from app.nextcloud_client import NextcloudClient
+from app.users import get_account
 
 
 THUMBNAIL_SIZE = (320, 320)
 THUMBNAIL_QUALITY = 82
 
 
-def get_or_create_thumbnail(photo_id: int) -> Path | None:
+def get_or_create_thumbnail(photo_id: int, user_id: int) -> Path | None:
     settings = get_settings()
     with get_conn() as conn:
         photo = conn.execute(
             """
             SELECT id, path, etag, thumbnail_cache_path
             FROM photos
-            WHERE id = %s AND deleted = false
+            WHERE id = %s AND user_id = %s AND deleted = false
             """,
-            (photo_id,),
+            (photo_id, user_id),
         ).fetchone()
         if not photo:
             return None
@@ -32,7 +33,7 @@ def get_or_create_thumbnail(photo_id: int) -> Path | None:
         if cached_path == expected_path and cached_path.exists():
             return cached_path
 
-        client = NextcloudClient(settings)
+        client = NextcloudClient(get_account(user_id))
         image_bytes = client.download(photo["path"])
         _write_thumbnail(image_bytes, expected_path)
         conn.execute(

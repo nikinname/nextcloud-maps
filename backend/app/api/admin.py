@@ -1,8 +1,10 @@
 from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
+from app.auth import current_admin, current_user
 from app.backup import export_backup, import_backup, inspect_backup
 from app.scanner import scan
 
@@ -11,13 +13,40 @@ BACKUP_DIR = Path("/data/backups")
 
 
 @router.post("/scan")
-def start_scan(background_tasks: BackgroundTasks):
-    background_tasks.add_task(scan)
+def start_scan(background_tasks: BackgroundTasks, user: dict[str, Any] = Depends(current_user)):
+    background_tasks.add_task(scan, int(user["id"]))
     return {"status": "started"}
 
 
+@router.post("/scan/all")
+def start_scan_all(background_tasks: BackgroundTasks, admin: dict[str, Any] = Depends(current_admin)):
+    from app.database import get_conn
+
+    with get_conn() as conn:
+        users = conn.execute("SELECT id FROM app_users WHERE disabled = false ORDER BY id").fetchall()
+    for user in users:
+        background_tasks.add_task(scan, int(user["id"]))
+    return {"status": "started", "users": len(users), "admin": admin["id"]}
+
+
+@router.get("/users")
+def list_users(admin: dict[str, Any] = Depends(current_admin)):
+    from app.database import get_conn
+
+    with get_conn() as conn:
+        users = conn.execute(
+            """
+            SELECT id, nextcloud_server_url, nextcloud_login_name, display_name,
+                   role, base_path, disabled, created_at, last_login_at
+            FROM app_users
+            ORDER BY id
+            """
+        ).fetchall()
+    return {"users": users, "admin": admin["id"]}
+
+
 @router.get("/backup")
-def download_backup():
+def download_backup(admin: dict[str, Any] = Depends(current_admin)):
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     backup_path = BACKUP_DIR / "photomap-backup.json.gz"
     result = export_backup(backup_path)
@@ -33,6 +62,7 @@ def download_backup():
 async def upload_backup(
     backup: UploadFile = File(...),
     confirm: str = Query(default=""),
+    admin: dict[str, Any] = Depends(current_admin),
 ):
     if confirm != "IMPORT":
         raise HTTPException(status_code=400, detail="Import requires confirm=IMPORT")

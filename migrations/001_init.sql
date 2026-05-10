@@ -1,9 +1,27 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 
+CREATE TABLE IF NOT EXISTS app_users (
+    id BIGSERIAL PRIMARY KEY,
+    nextcloud_server_url TEXT NOT NULL,
+    nextcloud_login_name TEXT NOT NULL,
+    nextcloud_user_id TEXT,
+    display_name TEXT,
+    role TEXT NOT NULL DEFAULT 'user',
+    app_password_encrypted TEXT NOT NULL,
+    base_path TEXT NOT NULL DEFAULT '/Photos',
+    exclude_paths TEXT DEFAULT '',
+    disabled BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    last_login_at TIMESTAMPTZ,
+    UNIQUE (nextcloud_server_url, nextcloud_login_name)
+);
+
 CREATE TABLE IF NOT EXISTS photos (
     id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES app_users(id),
     nextcloud_file_id TEXT,
-    path TEXT NOT NULL UNIQUE,
+    path TEXT NOT NULL,
     filename TEXT NOT NULL,
     etag TEXT,
     mime_type TEXT,
@@ -26,6 +44,9 @@ CREATE TABLE IF NOT EXISTS photos (
     geom GEOGRAPHY(Point, 4326)
 );
 
+ALTER TABLE photos ADD CONSTRAINT photos_user_path_key UNIQUE (user_id, path);
 CREATE INDEX IF NOT EXISTS idx_photos_has_gps ON photos(has_gps);
 CREATE INDEX IF NOT EXISTS idx_photos_taken_at ON photos(taken_at);
 CREATE INDEX IF NOT EXISTS idx_photos_geom ON photos USING GIST(geom);
+CREATE INDEX IF NOT EXISTS idx_photos_user_gps ON photos(user_id, has_gps, deleted);
+CREATE INDEX IF NOT EXISTS idx_photos_user_taken_at ON photos(user_id, taken_at);

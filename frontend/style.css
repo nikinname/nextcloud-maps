@@ -13,6 +13,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
@@ -121,11 +125,13 @@ button:hover,
   background: var(--accent-dark);
 }
 
+.secondary-action,
 .button.secondary {
   background: white;
   color: var(--accent-dark);
 }
 
+.secondary-action:hover,
 .button.secondary:hover {
   background: #eef7f5;
 }
@@ -136,9 +142,40 @@ button:disabled {
 }
 
 .actions {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.user-badge {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.login-panel {
+  align-items: center;
+  display: grid;
+  min-height: calc(100vh - 72px);
+  padding: 24px;
+  place-items: center;
+}
+
+.login-box {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 16px;
+  max-width: 420px;
+  padding: 22px;
+  width: 100%;
+}
+
+.login-box h2 {
+  font-size: 18px;
+  margin: 0;
 }
 
 .toolbox {

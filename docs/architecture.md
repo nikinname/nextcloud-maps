@@ -11,3 +11,9 @@ Il worker di indicizzazione e' integrato nel backend per il prototipo. Il comand
 ```bash
 docker compose exec backend python -m app.cli
 ```
+
+## Multiutenza
+
+Companion mantiene utenti locali nella tabella `app_users`. Ogni utente contiene il server Nextcloud, il login name, la cartella base e una app password cifrata con `APP_SECRET_KEY`. Le foto sono associate tramite `photos.user_id`, e tutte le API foto filtrano sul proprietario della sessione corrente.
+
+Il primo utente viene creato automaticamente dai valori storici in `.env` ed e' admin. I nuovi utenti entrano con Nextcloud Login Flow v2: Companion non salva la password reale Nextcloud, ma solo la app password dedicata restituita dal flow.

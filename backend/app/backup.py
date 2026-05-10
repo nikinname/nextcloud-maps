@@ -7,9 +7,25 @@ from typing import Any
 from app.database import get_conn, init_db
 
 
-BACKUP_VERSION = 1
+BACKUP_VERSION = 2
+USER_COLUMNS = [
+    "id",
+    "nextcloud_server_url",
+    "nextcloud_login_name",
+    "nextcloud_user_id",
+    "display_name",
+    "role",
+    "app_password_encrypted",
+    "base_path",
+    "exclude_paths",
+    "disabled",
+    "created_at",
+    "updated_at",
+    "last_login_at",
+]
 PHOTO_COLUMNS = [
     "id",
+    "user_id",
     "nextcloud_file_id",
     "path",
     "filename",
@@ -46,16 +62,20 @@ def export_backup(path: str | Path) -> dict[str, Any]:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     columns_sql = ", ".join(PHOTO_COLUMNS)
+    users_columns_sql = ", ".join(USER_COLUMNS)
     with get_conn() as conn:
+        users = conn.execute(f"SELECT {users_columns_sql} FROM app_users ORDER BY id").fetchall()
         photos = conn.execute(f"SELECT {columns_sql} FROM photos ORDER BY id").fetchall()
 
     payload = {
         "metadata": {
             "version": BACKUP_VERSION,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "table": "photos",
+            "tables": ["app_users", "photos"],
+            "users": len(users),
             "count": len(photos),
         },
+        "users": users,
         "photos": photos,
     }
     backup_json = json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default)
@@ -70,6 +90,7 @@ def inspect_backup(path: str | Path) -> dict[str, Any]:
         "path": str(Path(path)),
         "version": metadata["version"],
         "created_at": metadata.get("created_at"),
+        "users": len(payload.get("users", [])),
         "photos": len(payload["photos"]),
     }
 
@@ -79,14 +100,32 @@ def import_backup(path: str | Path, confirmed: bool = False) -> dict[str, Any]:
         raise RuntimeError("Import requires explicit confirmation because current data will be deleted.")
 
     payload = _load_payload(path)
+    users = payload.get("users", [])
     photos = payload["photos"]
     init_db()
 
     columns_sql = ", ".join(PHOTO_COLUMNS)
     placeholders = ", ".join([f"%({column})s" for column in PHOTO_COLUMNS])
+    users_columns_sql = ", ".join(USER_COLUMNS)
+    users_placeholders = ", ".join([f"%({column})s" for column in USER_COLUMNS])
 
     with get_conn() as conn:
-        conn.execute("TRUNCATE photos RESTART IDENTITY")
+        if users:
+            conn.execute("TRUNCATE photos, app_users RESTART IDENTITY CASCADE")
+            with conn.cursor() as cursor:
+                cursor.executemany(
+                    f"INSERT INTO app_users ({users_columns_sql}) VALUES ({users_placeholders})",
+                    users,
+                )
+            max_user_id = max(user["id"] for user in users)
+            conn.execute("SELECT setval(pg_get_serial_sequence('app_users', 'id'), %s, true)", (max_user_id,))
+        else:
+            from app.users import bootstrap_env_user
+
+            default_user_id = bootstrap_env_user(conn)
+            conn.execute("TRUNCATE photos RESTART IDENTITY")
+            for photo in photos:
+                photo["user_id"] = default_user_id
         if photos:
             with conn.cursor() as cursor:
                 cursor.executemany(
@@ -116,7 +155,7 @@ def import_backup(path: str | Path, confirmed: bool = False) -> dict[str, Any]:
 def _load_payload(path: str | Path) -> dict[str, Any]:
     input_path = Path(path)
     payload = json.loads(_read_text(input_path))
-    if payload.get("metadata", {}).get("version") != BACKUP_VERSION:
+    if payload.get("metadata", {}).get("version") not in (1, BACKUP_VERSION):
         raise ValueError("Unsupported backup version")
     if not isinstance(payload.get("photos"), list):
         raise ValueError("Invalid backup: photos must be a list")

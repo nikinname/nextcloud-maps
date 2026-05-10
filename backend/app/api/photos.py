@@ -1,6 +1,9 @@
-from fastapi import APIRouter, HTTPException, Query
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
+from app.auth import current_user
 from app.database import get_conn
 from app.thumbnails import get_or_create_thumbnail
 
@@ -13,9 +16,10 @@ def map_photos(
     to_date: str | None = None,
     folder: str | None = None,
     limit: int = Query(default=10000, ge=1, le=10000),
+    user: dict[str, Any] = Depends(current_user),
 ):
-    where = ["has_gps = true", "deleted = false"]
-    params: list[object] = []
+    where = ["user_id = %s", "has_gps = true", "deleted = false"]
+    params: list[object] = [user["id"]]
     if from_date:
         where.append("taken_at >= %s")
         params.append(from_date)
@@ -43,18 +47,21 @@ def map_photos(
 
 
 @router.get("/{photo_id}")
-def photo_detail(photo_id: int):
+def photo_detail(photo_id: int, user: dict[str, Any] = Depends(current_user)):
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM photos WHERE id = %s AND deleted = false", (photo_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM photos WHERE id = %s AND user_id = %s AND deleted = false",
+            (photo_id, user["id"]),
+        ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Photo not found")
     return row
 
 
 @router.get("/{photo_id}/thumbnail")
-def thumbnail(photo_id: int):
+def thumbnail(photo_id: int, user: dict[str, Any] = Depends(current_user)):
     try:
-        thumbnail_path = get_or_create_thumbnail(photo_id)
+        thumbnail_path = get_or_create_thumbnail(photo_id, int(user["id"]))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Thumbnail generation failed: {exc}") from exc
     if not thumbnail_path:

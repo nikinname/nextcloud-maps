@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, photos
+from app.api import admin, auth, photos
 from app.config import get_settings
 from app.database import init_db
 
@@ -17,6 +17,7 @@ app.add_middleware(
 )
 app.include_router(photos.router)
 app.include_router(admin.router)
+app.include_router(auth.router)
 
 
 @app.on_event("startup")
@@ -36,4 +37,5 @@ def frontend_config():
         "defaultLat": settings.map_default_lat,
         "defaultLon": settings.map_default_lon,
         "defaultZoom": settings.map_default_zoom,
+        "nextcloudUrl": str(settings.nextcloud_url).rstrip("/"),
     }

@@ -6,7 +6,7 @@ Il documento di progetto completo e' in `README_nextcloud_photo_map.md`.
 
 ## Avvio rapido
 
-1. Copiare `.env.example` in `.env` e compilare i dati Nextcloud.
+1. Copiare `.env.example` in `.env`, compilare i dati Nextcloud iniziali e impostare `APP_SECRET_KEY` con un valore lungo e casuale.
 2. Avviare lo stack:
 
 ```bash
@@ -19,7 +19,9 @@ docker compose up -d --build
 http://localhost:8080
 ```
 
-4. Avviare una scansione manuale:
+4. Accedere dalla UI con Nextcloud. Alla prima partenza l'utente configurato in `.env` viene importato come admin iniziale.
+
+5. Avviare una scansione manuale:
 
 ```bash
 docker compose exec backend python -m app.cli
@@ -29,6 +31,12 @@ Per una prova piccola senza processare tutta la libreria:
 
 ```bash
 docker compose exec backend python -m app.cli --limit 5
+```
+
+Per scansionare un utente specifico:
+
+```bash
+docker compose exec backend python -m app.cli scan --user-id 1
 ```
 
 In alternativa, dalla UI si puo' usare il pulsante di scansione, che chiama `POST /api/admin/scan`.
@@ -74,7 +82,9 @@ Implementato:
 
 - Docker Compose con backend, database e frontend.
 - Schema iniziale `photos` con campo PostGIS `geom`.
+- Schema multiutente con `app_users` e associazione `photos.user_id`.
 - API `/api/health`, `/api/config`, `/api/photos/map`, `/api/photos/{id}`, `/api/admin/scan`.
+- Login/registrazione tramite Nextcloud Login Flow v2 con app password cifrata localmente.
 - Scanner incrementale basato su `etag`.
 - Backup/import JSON del database applicativo con conferma distruttiva sull'import.
 - Thumbnail generate al primo accesso, salvate localmente in `/data/thumbnails` e rigenerate se cambia `etag`.

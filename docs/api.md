@@ -12,6 +12,17 @@ GET /api/health
 GET /api/config
 ```
 
+## Autenticazione
+
+```http
+GET /api/auth/me
+POST /api/auth/logout
+POST /api/auth/nextcloud/start
+POST /api/auth/nextcloud/poll
+```
+
+Il login usa Nextcloud Login Flow v2. La sessione applicativa e' salvata in un cookie HTTP-only.
+
 ## Foto su mappa
 
 ```http
@@ -35,4 +46,7 @@ GET /api/photos/{id}
 
 ```http
 POST /api/admin/scan
+POST /api/admin/scan/all
 ```
+
+`/api/admin/scan` scansiona l'utente corrente. `/api/admin/scan/all`, backup e import richiedono ruolo admin.

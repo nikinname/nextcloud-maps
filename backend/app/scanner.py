@@ -1,30 +1,31 @@
 import logging
 from pathlib import PurePosixPath
 
-from app.config import get_settings
 from app.database import get_conn, init_db
 from app.exif_reader import read_exif
 from app.nextcloud_client import NextcloudClient, NextcloudFile
+from app.users import NextcloudAccount, get_account, get_default_account
 
 
 logger = logging.getLogger(__name__)
 
 
-def _is_allowed_image(item: NextcloudFile) -> bool:
-    settings = get_settings()
+def _is_allowed_image(item: NextcloudFile, account: NextcloudAccount) -> bool:
     suffix = PurePosixPath(item.path).suffix.lower()
-    if item.is_collection or suffix not in settings.allowed_extensions:
+    from app.config import get_settings
+
+    if item.is_collection or suffix not in get_settings().allowed_extensions:
         return False
-    return not any(item.path.startswith(excluded) for excluded in settings.excluded_paths)
+    return not any(item.path.startswith(excluded) for excluded in account.exclude_paths)
 
 
-def scan(limit: int | None = None, progress_every: int = 100) -> dict[str, int]:
-    settings = get_settings()
+def scan(user_id: int | None = None, limit: int | None = None, progress_every: int = 100) -> dict[str, int]:
     logger.info("Initializing database")
     init_db()
-    client = NextcloudClient(settings)
-    logger.info("Listing Nextcloud files under %s", settings.nextcloud_base_path)
-    items = [item for item in client.list_recursive(settings.nextcloud_base_path) if _is_allowed_image(item)]
+    account = get_account(user_id) if user_id is not None else get_default_account()
+    client = NextcloudClient(account)
+    logger.info("Listing Nextcloud files for user %s under %s", account.login_name, account.base_path)
+    items = [item for item in client.list_recursive(account.base_path) if _is_allowed_image(item, account)]
     if limit is not None:
         items = items[:limit]
     seen_paths = [item.path for item in items]
@@ -40,7 +41,10 @@ def scan(limit: int | None = None, progress_every: int = 100) -> dict[str, int]:
 
     with get_conn() as conn:
         for index, item in enumerate(items, start=1):
-            current = conn.execute("SELECT etag, has_gps FROM photos WHERE path = %s", (item.path,)).fetchone()
+            current = conn.execute(
+                "SELECT etag, has_gps FROM photos WHERE user_id = %s AND path = %s",
+                (account.user_id, item.path),
+            ).fetchone()
             if current and current["etag"] == item.etag:
                 conn.execute(
                     """
@@ -49,9 +53,9 @@ def scan(limit: int | None = None, progress_every: int = 100) -> dict[str, int]:
                         nextcloud_url = %s,
                         last_seen_at = now(),
                         deleted = false
-                    WHERE path = %s
+                    WHERE user_id = %s AND path = %s
                     """,
-                    (item.file_id, client.web_url(item.path, item.file_id), item.path),
+                    (item.file_id, client.web_url(item.path, item.file_id), account.user_id, item.path),
                 )
                 stats["unchanged"] += 1
                 if current["has_gps"]:
@@ -95,13 +99,13 @@ def scan(limit: int | None = None, progress_every: int = 100) -> dict[str, int]:
             conn.execute(
                 """
                 INSERT INTO photos (
-                    nextcloud_file_id, path, filename, etag, mime_type, size_bytes,
+                    user_id, nextcloud_file_id, path, filename, etag, mime_type, size_bytes,
                     last_modified, taken_at, latitude, longitude, altitude,
                     camera_make, camera_model, orientation, has_gps, has_preview,
                     nextcloud_url, indexed_at, last_seen_at, deleted, geom
                 )
                 VALUES (
-                    %(file_id)s, %(path)s, %(filename)s, %(etag)s, %(mime_type)s, %(size_bytes)s,
+                    %(user_id)s, %(file_id)s, %(path)s, %(filename)s, %(etag)s, %(mime_type)s, %(size_bytes)s,
                     %(last_modified)s, %(taken_at)s, %(latitude)s, %(longitude)s, %(altitude)s,
                     %(camera_make)s, %(camera_model)s, %(orientation)s, %(has_gps)s, false,
                     %(nextcloud_url)s, now(), now(), false,
@@ -114,7 +118,7 @@ def scan(limit: int | None = None, progress_every: int = 100) -> dict[str, int]:
                       ELSE NULL
                     END
                 )
-                ON CONFLICT (path) DO UPDATE SET
+                ON CONFLICT (user_id, path) DO UPDATE SET
                     nextcloud_file_id = EXCLUDED.nextcloud_file_id,
                     filename = EXCLUDED.filename,
                     etag = EXCLUDED.etag,
@@ -136,6 +140,7 @@ def scan(limit: int | None = None, progress_every: int = 100) -> dict[str, int]:
                     geom = EXCLUDED.geom
                 """,
                 {
+                    "user_id": account.user_id,
                     "file_id": item.file_id,
                     "path": item.path,
                     "filename": item.filename,
@@ -161,8 +166,14 @@ def scan(limit: int | None = None, progress_every: int = 100) -> dict[str, int]:
                 )
         if limit is None:
             conn.execute(
-                "UPDATE photos SET deleted = true WHERE path LIKE %s AND NOT (path = ANY(%s::text[]))",
-                (f"{settings.nextcloud_base_path.rstrip('/')}%", seen_paths),
+                """
+                UPDATE photos
+                SET deleted = true
+                WHERE user_id = %s
+                  AND path LIKE %s
+                  AND NOT (path = ANY(%s::text[]))
+                """,
+                (account.user_id, f"{account.base_path.rstrip('/')}%", seen_paths),
             )
         else:
             logger.info("Limited scan: deletion marking skipped")

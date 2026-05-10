@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://photomap:photomap@db:5432/photomap"
     thumbnail_cache_dir: str = "/data/thumbnails"
+    app_secret_key: str = "change-me-in-production"
+    session_cookie_name: str = "companion_session"
+    session_max_age_seconds: int = 60 * 60 * 24 * 30
 
     map_tile_url: str = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
     map_default_lat: float = 43.837

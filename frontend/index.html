@@ -3,27 +3,40 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Nextcloud Photo Map</title>
+    <title>Companion</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/style.css?v=1.1.1">
   </head>
   <body>
     <header class="topbar">
       <div>
         <div class="brandline">
-          <h1>Nextcloud Photo Map</h1>
-          <span class="version">v1.0</span>
+          <h1>Companion</h1>
+          <span class="version">v1.1</span>
         </div>
         <p id="status">Caricamento mappa...</p>
       </div>
       <div class="actions">
+        <span id="userBadge" class="user-badge" hidden></span>
+        <button id="logoutButton" class="secondary-action" type="button" hidden>Esci</button>
         <button id="scanButton" type="button">Avvia scansione</button>
-        <a class="button secondary" href="/api/admin/backup">Scarica backup</a>
+        <a id="backupLink" class="button secondary" href="/api/admin/backup">Scarica backup</a>
       </div>
     </header>
-    <main>
+    <section id="loginPanel" class="login-panel" hidden>
+      <div class="login-box">
+        <h2>Accedi con Nextcloud</h2>
+        <label>
+          URL Nextcloud
+          <input id="nextcloudUrl" type="url" placeholder="https://cloud.example.org">
+        </label>
+        <button id="loginButton" type="button">Accedi</button>
+        <button id="resumeButton" class="secondary-action" type="button" hidden>Ho autorizzato, entra</button>
+      </div>
+    </section>
+    <main id="appShell" hidden>
       <aside class="filters">
         <label>
           Dal
@@ -38,7 +51,7 @@
           <input id="folder" type="text" placeholder="/Photos">
         </label>
         <button id="applyFilters" type="button">Filtra</button>
-        <div class="toolbox">
+        <div id="adminToolbox" class="toolbox">
           <label>
             Import backup
             <input id="backupFile" type="file" accept="application/gzip,application/json,.json,.json.gz">
@@ -54,6 +67,6 @@
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-    <script src="/app.js"></script>
+    <script src="/app.js?v=1.1.1"></script>
   </body>
 </html>

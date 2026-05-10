@@ -11,6 +11,7 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command")
 
     scan_parser = subparsers.add_parser("scan", help="Scan Nextcloud photos and update the local database.")
+    scan_parser.add_argument("--user-id", type=int, default=None, help="Scan a specific Companion user.")
     scan_parser.add_argument("--limit", type=int, default=None, help="Process only the first N image files.")
     scan_parser.add_argument(
         "--progress-every",
@@ -53,7 +54,8 @@ def main() -> None:
 
     scan_limit = args.limit
     progress_every = args.progress_every
-    print(json.dumps(scan(limit=scan_limit, progress_every=progress_every), indent=2, default=str))
+    user_id = getattr(args, "user_id", None)
+    print(json.dumps(scan(user_id=user_id, limit=scan_limit, progress_every=progress_every), indent=2, default=str))
 
 
 if __name__ == "__main__":

@@ -10,10 +10,28 @@ from app.config import get_settings
 SCHEMA_SQL = """
 CREATE EXTENSION IF NOT EXISTS postgis;
 
+CREATE TABLE IF NOT EXISTS app_users (
+    id BIGSERIAL PRIMARY KEY,
+    nextcloud_server_url TEXT NOT NULL,
+    nextcloud_login_name TEXT NOT NULL,
+    nextcloud_user_id TEXT,
+    display_name TEXT,
+    role TEXT NOT NULL DEFAULT 'user',
+    app_password_encrypted TEXT NOT NULL,
+    base_path TEXT NOT NULL DEFAULT '/Photos',
+    exclude_paths TEXT DEFAULT '',
+    disabled BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    last_login_at TIMESTAMPTZ,
+    UNIQUE (nextcloud_server_url, nextcloud_login_name)
+);
+
 CREATE TABLE IF NOT EXISTS photos (
     id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES app_users(id),
     nextcloud_file_id TEXT,
-    path TEXT NOT NULL UNIQUE,
+    path TEXT NOT NULL,
     filename TEXT NOT NULL,
     etag TEXT,
     mime_type TEXT,
@@ -36,9 +54,34 @@ CREATE TABLE IF NOT EXISTS photos (
     geom GEOGRAPHY(Point, 4326)
 );
 
+ALTER TABLE photos ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES app_users(id);
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS disabled BOOLEAN DEFAULT FALSE;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'photos_path_key' AND conrelid = 'photos'::regclass
+    ) THEN
+        ALTER TABLE photos DROP CONSTRAINT photos_path_key;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'photos_user_path_key' AND conrelid = 'photos'::regclass
+    ) THEN
+        ALTER TABLE photos ADD CONSTRAINT photos_user_path_key UNIQUE (user_id, path);
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_photos_has_gps ON photos(has_gps);
 CREATE INDEX IF NOT EXISTS idx_photos_taken_at ON photos(taken_at);
 CREATE INDEX IF NOT EXISTS idx_photos_geom ON photos USING GIST(geom);
+CREATE INDEX IF NOT EXISTS idx_photos_user_gps ON photos(user_id, has_gps, deleted);
+CREATE INDEX IF NOT EXISTS idx_photos_user_taken_at ON photos(user_id, taken_at);
 """
 
 
@@ -52,4 +95,8 @@ def get_conn() -> Iterator[psycopg.Connection]:
 def init_db() -> None:
     with get_conn() as conn:
         conn.execute(SCHEMA_SQL)
+        from app.users import bootstrap_env_user
+
+        user_id = bootstrap_env_user(conn, get_settings())
+        conn.execute("UPDATE photos SET user_id = %s WHERE user_id IS NULL", (user_id,))
         conn.commit()
