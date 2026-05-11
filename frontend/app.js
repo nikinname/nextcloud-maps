@@ -267,10 +267,11 @@ function reportHtml(report) {
               <th>GPS</th>
               <th>Ultimo login</th>
               <th>Ultimo indice</th>
+              <th>Azioni</th>
             </tr>
           </thead>
           <tbody>
-            ${report.users.map(userRowHtml).join("") || `<tr><td colspan="6">Nessun utente</td></tr>`}
+            ${report.users.map(userRowHtml).join("") || `<tr><td colspan="7">Nessun utente</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -298,6 +299,11 @@ function userRowHtml(user) {
       <td>${Number(user.photos_with_gps || 0)}</td>
       <td>${formatDate(user.last_login_at)}</td>
       <td>${formatDate(user.last_indexed_at)}</td>
+      <td>
+        <button class="small-action" type="button" data-scan-user-id="${Number(user.id)}" ${user.disabled ? "disabled" : ""}>
+          Scansiona
+        </button>
+      </td>
     </tr>
   `;
 }
@@ -355,6 +361,21 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+adminReportContent.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-scan-user-id]");
+  if (!button) return;
+  button.disabled = true;
+  const userId = button.dataset.scanUserId;
+  try {
+    const result = await fetchJson(`/api/admin/users/${userId}/scan`, { method: "POST" });
+    statusEl.textContent = `Scansione utente in coda: job ${result.jobId}`;
+    await loadAdminReport();
+  } catch (error) {
+    statusEl.textContent = `Errore scansione utente: ${error.message}`;
+    button.disabled = false;
+  }
+});
 
 applyFilters.addEventListener("click", () => {
   loadPhotos().catch((error) => {

@@ -147,6 +147,12 @@ button:disabled {
   opacity: 0.65;
 }
 
+.small-action {
+  font-size: 12px;
+  min-height: 32px;
+  padding: 5px 9px;
+}
+
 .actions {
   align-items: center;
   display: flex;

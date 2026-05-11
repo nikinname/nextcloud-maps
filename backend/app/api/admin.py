@@ -1,32 +1,45 @@
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from app.auth import current_admin, current_user
 from app.backup import export_backup, import_backup, inspect_backup
-from app.scanner import scan
+from app.scan_queue import submit_scan
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 BACKUP_DIR = Path("/data/backups")
 
 
 @router.post("/scan")
-def start_scan(background_tasks: BackgroundTasks, user: dict[str, Any] = Depends(current_user)):
-    background_tasks.add_task(scan, int(user["id"]), started_by=int(user["id"]))
-    return {"status": "started"}
+def start_scan(user: dict[str, Any] = Depends(current_user)):
+    job_id = submit_scan(int(user["id"]), started_by=int(user["id"]))
+    return {"status": "queued", "jobId": job_id}
 
 
 @router.post("/scan/all")
-def start_scan_all(background_tasks: BackgroundTasks, admin: dict[str, Any] = Depends(current_admin)):
+def start_scan_all(admin: dict[str, Any] = Depends(current_admin)):
     from app.database import get_conn
 
     with get_conn() as conn:
         users = conn.execute("SELECT id FROM app_users WHERE disabled = false ORDER BY id").fetchall()
+    job_ids = []
     for user in users:
-        background_tasks.add_task(scan, int(user["id"]), started_by=int(admin["id"]))
-    return {"status": "started", "users": len(users), "admin": admin["id"]}
+        job_ids.append(submit_scan(int(user["id"]), started_by=int(admin["id"])))
+    return {"status": "queued", "users": len(users), "jobIds": job_ids, "admin": admin["id"]}
+
+
+@router.post("/users/{user_id}/scan")
+def start_user_scan(user_id: int, admin: dict[str, Any] = Depends(current_admin)):
+    from app.database import get_conn
+
+    with get_conn() as conn:
+        user = conn.execute("SELECT id FROM app_users WHERE id = %s AND disabled = false", (user_id,)).fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    job_id = submit_scan(user_id, started_by=int(admin["id"]))
+    return {"status": "queued", "jobId": job_id, "userId": user_id}
 
 
 @router.get("/users")
@@ -89,7 +102,7 @@ def admin_report(admin: dict[str, Any] = Depends(current_admin)):
                 j.exif_errors
             FROM scan_jobs j
             JOIN app_users u ON u.id = j.user_id
-            WHERE j.status = 'running'
+            WHERE j.status IN ('queued', 'running')
             ORDER BY j.started_at DESC
             """
         ).fetchall()

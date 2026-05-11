@@ -24,11 +24,13 @@ def scan(
     limit: int | None = None,
     progress_every: int = 100,
     started_by: int | None = None,
+    job_id: int | None = None,
 ) -> dict[str, int]:
     logger.info("Initializing database")
     init_db()
     account = get_account(user_id) if user_id is not None else get_default_account()
-    job_id = _create_scan_job(account.user_id, started_by)
+    job_id = job_id or create_scan_job(account.user_id, started_by, status="running")
+    _update_scan_job(job_id, status="running")
     client = NextcloudClient(account)
     stats = {
         "job_id": job_id,
@@ -207,15 +209,15 @@ def scan(
         raise
 
 
-def _create_scan_job(user_id: int, started_by: int | None) -> int:
+def create_scan_job(user_id: int, started_by: int | None, status: str = "queued") -> int:
     with get_conn() as conn:
         row = conn.execute(
             """
             INSERT INTO scan_jobs (user_id, started_by, status)
-            VALUES (%s, %s, 'running')
+            VALUES (%s, %s, %s)
             RETURNING id
             """,
-            (user_id, started_by),
+            (user_id, started_by, status),
         ).fetchone()
         conn.commit()
         return int(row["id"])
