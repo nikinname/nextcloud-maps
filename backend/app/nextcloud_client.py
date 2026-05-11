@@ -34,7 +34,7 @@ class NextcloudClient:
     def _dav_url(self, path: str) -> str:
         normalized = "/" + path.strip("/")
         quoted_path = quote(normalized, safe="/")
-        return f"{self.base_url}/remote.php/dav/files/{quote(self.account.login_name)}/{quoted_path}"
+        return f"{self.base_url}/remote.php/dav/files/{quote(self.account.login_name)}{quoted_path}"
 
     def web_url(self, path: str, file_id: str | None = None) -> str:
         directory = quote(str(PurePosixPath(path).parent), safe="/")
