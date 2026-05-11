@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 from pathlib import PurePosixPath
-from urllib.parse import quote, unquote, urljoin
+from urllib.parse import quote, urljoin
 from xml.etree import ElementTree
 
 import httpx
@@ -83,7 +83,7 @@ class NextcloudClient:
 
             resource_type = prop.find("d:resourcetype", DAV_NS)
             is_collection = resource_type is not None and resource_type.find("d:collection", DAV_NS) is not None
-            decoded_path = unquote(httpx.URL(urljoin(self.base_url, href)).path)
+            decoded_path = httpx.URL(urljoin(self.base_url, href)).path
             path = decoded_path.removeprefix(dav_prefix)
             path = "/" + path.strip("/")
             if is_collection:
