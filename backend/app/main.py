@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import admin, auth, photos
 from app.config import get_settings
-from app.database import init_db
+from app.database import init_db, mark_interrupted_scan_jobs
 
 settings = get_settings()
 
@@ -23,6 +23,7 @@ app.include_router(auth.router)
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    mark_interrupted_scan_jobs()
 
 
 @app.get("/api/health")

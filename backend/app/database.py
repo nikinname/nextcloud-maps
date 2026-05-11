@@ -119,3 +119,18 @@ def init_db() -> None:
         if user_id is not None:
             conn.execute("UPDATE photos SET user_id = %s WHERE user_id IS NULL", (user_id,))
         conn.commit()
+
+
+def mark_interrupted_scan_jobs() -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE scan_jobs
+            SET status = 'failed',
+                finished_at = now(),
+                error_message = COALESCE(error_message, 'Interrupted by backend restart')
+            WHERE status IN ('queued', 'running')
+              AND finished_at IS NULL
+            """
+        )
+        conn.commit()
