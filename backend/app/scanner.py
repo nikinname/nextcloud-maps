@@ -19,6 +19,16 @@ def _is_allowed_image(item: NextcloudFile, account: NextcloudAccount) -> bool:
     return not any(item.path.startswith(excluded) for excluded in account.exclude_paths)
 
 
+def _clean_text(value: object) -> object:
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    return value
+
+
+def _clean_mapping(values: dict[str, object]) -> dict[str, object]:
+    return {key: _clean_text(value) for key, value in values.items()}
+
+
 def scan(
     user_id: int | None = None,
     limit: int | None = None,
@@ -87,6 +97,7 @@ def scan(
                             stats["without_gps"],
                             stats["exif_errors"],
                         )
+                        conn.commit()
                     continue
 
                 exif = {
@@ -110,49 +121,7 @@ def scan(
                 else:
                     stats["without_gps"] += 1
 
-                conn.execute(
-                    """
-                    INSERT INTO photos (
-                        user_id, nextcloud_file_id, path, filename, etag, mime_type, size_bytes,
-                        last_modified, taken_at, latitude, longitude, altitude,
-                        camera_make, camera_model, orientation, has_gps, has_preview,
-                        nextcloud_url, indexed_at, last_seen_at, deleted, geom
-                    )
-                    VALUES (
-                        %(user_id)s, %(file_id)s, %(path)s, %(filename)s, %(etag)s, %(mime_type)s, %(size_bytes)s,
-                        %(last_modified)s, %(taken_at)s, %(latitude)s, %(longitude)s, %(altitude)s,
-                        %(camera_make)s, %(camera_model)s, %(orientation)s, %(has_gps)s, false,
-                        %(nextcloud_url)s, now(), now(), false,
-                        CASE
-                          WHEN %(latitude)s::double precision IS NOT NULL AND %(longitude)s::double precision IS NOT NULL
-                          THEN ST_SetSRID(
-                            ST_MakePoint(%(longitude)s::double precision, %(latitude)s::double precision),
-                            4326
-                          )::geography
-                          ELSE NULL
-                        END
-                    )
-                    ON CONFLICT (user_id, path) DO UPDATE SET
-                        nextcloud_file_id = EXCLUDED.nextcloud_file_id,
-                        filename = EXCLUDED.filename,
-                        etag = EXCLUDED.etag,
-                        mime_type = EXCLUDED.mime_type,
-                        size_bytes = EXCLUDED.size_bytes,
-                        last_modified = EXCLUDED.last_modified,
-                        taken_at = EXCLUDED.taken_at,
-                        latitude = EXCLUDED.latitude,
-                        longitude = EXCLUDED.longitude,
-                        altitude = EXCLUDED.altitude,
-                        camera_make = EXCLUDED.camera_make,
-                        camera_model = EXCLUDED.camera_model,
-                        orientation = EXCLUDED.orientation,
-                        has_gps = EXCLUDED.has_gps,
-                        nextcloud_url = EXCLUDED.nextcloud_url,
-                        indexed_at = now(),
-                        last_seen_at = now(),
-                        deleted = false,
-                        geom = EXCLUDED.geom
-                    """,
+                photo_values = _clean_mapping(
                     {
                         "user_id": account.user_id,
                         "file_id": item.file_id,
@@ -166,6 +135,55 @@ def scan(
                         **exif,
                     },
                 )
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO photos (
+                            user_id, nextcloud_file_id, path, filename, etag, mime_type, size_bytes,
+                            last_modified, taken_at, latitude, longitude, altitude,
+                            camera_make, camera_model, orientation, has_gps, has_preview,
+                            nextcloud_url, indexed_at, last_seen_at, deleted, geom
+                        )
+                        VALUES (
+                            %(user_id)s, %(file_id)s, %(path)s, %(filename)s, %(etag)s, %(mime_type)s, %(size_bytes)s,
+                            %(last_modified)s, %(taken_at)s, %(latitude)s, %(longitude)s, %(altitude)s,
+                            %(camera_make)s, %(camera_model)s, %(orientation)s, %(has_gps)s, false,
+                            %(nextcloud_url)s, now(), now(), false,
+                            CASE
+                              WHEN %(latitude)s::double precision IS NOT NULL AND %(longitude)s::double precision IS NOT NULL
+                              THEN ST_SetSRID(
+                                ST_MakePoint(%(longitude)s::double precision, %(latitude)s::double precision),
+                                4326
+                              )::geography
+                              ELSE NULL
+                            END
+                        )
+                        ON CONFLICT (user_id, path) DO UPDATE SET
+                            nextcloud_file_id = EXCLUDED.nextcloud_file_id,
+                            filename = EXCLUDED.filename,
+                            etag = EXCLUDED.etag,
+                            mime_type = EXCLUDED.mime_type,
+                            size_bytes = EXCLUDED.size_bytes,
+                            last_modified = EXCLUDED.last_modified,
+                            taken_at = EXCLUDED.taken_at,
+                            latitude = EXCLUDED.latitude,
+                            longitude = EXCLUDED.longitude,
+                            altitude = EXCLUDED.altitude,
+                            camera_make = EXCLUDED.camera_make,
+                            camera_model = EXCLUDED.camera_model,
+                            orientation = EXCLUDED.orientation,
+                            has_gps = EXCLUDED.has_gps,
+                            nextcloud_url = EXCLUDED.nextcloud_url,
+                            indexed_at = now(),
+                            last_seen_at = now(),
+                            deleted = false,
+                            geom = EXCLUDED.geom
+                        """,
+                        photo_values,
+                    )
+                except Exception:
+                    logger.exception("Photo upsert failed for %s", item.path)
+                    raise
                 stats["inserted_or_updated"] += 1
                 if progress_every > 0 and (index == 1 or index % progress_every == 0 or index == len(items)):
                     _update_scan_job(job_id, processed_files=index, **_job_stats(stats))
@@ -179,6 +197,7 @@ def scan(
                         stats["without_gps"],
                         stats["exif_errors"],
                     )
+                    conn.commit()
             if limit is None:
                 conn.execute(
                     """
