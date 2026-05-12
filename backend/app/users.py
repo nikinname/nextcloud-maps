@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 from cryptography.fernet import InvalidToken
 
 from app.config import Settings, get_settings
@@ -52,6 +53,7 @@ def get_or_create_user_from_nextcloud(
 ) -> dict[str, Any]:
     normalized_server_url = server_url.rstrip("/")
     encrypted_password = encrypt_secret(app_password)
+    old_app_password = _get_existing_app_password(normalized_server_url, login_name)
 
     with get_conn() as conn:
         user_count = conn.execute("SELECT count(*) AS count FROM app_users").fetchone()["count"]
@@ -81,6 +83,8 @@ def get_or_create_user_from_nextcloud(
         if row["role"] == "admin":
             conn.execute("UPDATE photos SET user_id = %s WHERE user_id IS NULL", (row["id"],))
         conn.commit()
+        if old_app_password and old_app_password != app_password:
+            _delete_nextcloud_app_password(normalized_server_url, login_name, old_app_password)
         return row
 
 
@@ -169,3 +173,35 @@ def validate_stored_credentials(user_id: int) -> None:
         decrypt_secret(row["app_password_encrypted"])
     except InvalidToken:
         mark_credentials_invalid(user_id, "Stored app password cannot be decrypted. Reconnect Nextcloud.")
+
+
+def _get_existing_app_password(server_url: str, login_name: str) -> str | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT app_password_encrypted
+            FROM app_users
+            WHERE nextcloud_server_url = %s AND nextcloud_login_name = %s
+            """,
+            (server_url, login_name),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        return decrypt_secret(row["app_password_encrypted"])
+    except InvalidToken:
+        return None
+
+
+def _delete_nextcloud_app_password(server_url: str, login_name: str, app_password: str) -> None:
+    try:
+        response = httpx.delete(
+            f"{server_url}/ocs/v2.php/core/apppassword",
+            auth=(login_name, app_password),
+            headers={"OCS-APIREQUEST": "true", "User-Agent": "Nextcloud Maps Companion"},
+            timeout=30,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError:
+        # Best effort: the old token may have already been revoked by the user.
+        return

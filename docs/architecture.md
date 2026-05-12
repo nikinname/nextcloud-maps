@@ -122,6 +122,8 @@ Flusso:
 6. Companion crea una sessione locale HTTP-only.
 
 La password principale Nextcloud non viene mai salvata.
+Se un utente autorizza di nuovo l'app, Companion salva la nuova app password e prova a revocare quella precedente con l'endpoint OCS `/ocs/v2.php/core/apppassword`.
+La revoca e' best effort: se la vecchia chiave e' gia stata rimossa o non e' piu valida, il login resta comunque valido.
 
 ## Cifratura credenziali
 

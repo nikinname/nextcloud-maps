@@ -36,6 +36,8 @@ Account Nextcloud da ricollegare
 Premere `Ricollega Nextcloud` e autorizzare di nuovo l'app su Nextcloud.
 
 Alla nuova autorizzazione Companion sostituisce la chiave precedente con quella nuova.
+Quando possibile, Companion revoca automaticamente la vecchia app password salvata prima di usare quella nuova.
+Eventuali chiavi duplicate create da versioni precedenti devono essere eliminate una volta dalla pagina sicurezza di Nextcloud.
 
 ## Mappa
 
