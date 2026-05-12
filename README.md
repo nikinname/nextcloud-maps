@@ -1,113 +1,63 @@
-# Nextcloud Photo Map
+# Nextcloud Maps Companion
 
-Web app containerizzata per indicizzare foto da Nextcloud via WebDAV, leggere coordinate EXIF e visualizzarle su mappa Leaflet.
+Nextcloud Maps Companion e' una web app autonoma che indicizza le foto archiviate su Nextcloud, legge le coordinate GPS dai metadati EXIF e le visualizza su una mappa interattiva.
 
-Il documento di progetto completo e' in `README_nextcloud_photo_map.md`.
+L'app nasce come sostituto/companion dell'app Maps di Nextcloud quando questa non e' piu aggiornata o non risponde alle esigenze di consultazione delle foto geolocalizzate.
+
+Nextcloud resta il sistema di archiviazione dei file. Companion gestisce indicizzazione, database locale, cache thumbnail, login utenti e visualizzazione su mappa.
+
+## Documentazione
+
+- [Installazione e configurazione](docs/installation.md)
+- [Manuale utente](docs/user-manual.md)
+- [Manuale admin](docs/admin-manual.md)
+- [Architettura software](docs/architecture.md)
+- [API](docs/api.md)
+- [Contesto e requisiti iniziali](README_nextcloud_photo_map.md)
+
+## Funzioni principali
+
+- Login tramite Nextcloud Login Flow v2.
+- Nessuna password Nextcloud salvata: viene salvata solo una app password dedicata, cifrata localmente.
+- Supporto multiutente.
+- Admin configurato tramite `ADMIN_NC_USERNAME`.
+- Scansione WebDAV delle foto Nextcloud.
+- Lettura EXIF e coordinate GPS.
+- Mappa Leaflet con clustering marker.
+- Thumbnail generate localmente.
+- Report admin su utenti, foto indicizzate e scansioni.
+- Backup/import applicativo di utenti e foto.
+- Frontend HTTPS con certificato self-signed o Let's Encrypt.
 
 ## Avvio rapido
 
-1. Copiare `.env.example` in `.env`, compilare `NEXTCLOUD_URL`, `ADMIN_NC_USERNAME` e impostare `APP_SECRET_KEY` con un valore lungo e casuale.
-2. Avviare lo stack:
+1. Copiare `.env.example` in `.env`.
+2. Configurare almeno:
+
+```env
+NEXTCLOUD_URL=https://cloud.example.org
+ADMIN_NC_USERNAME=utente-admin-nextcloud
+APP_SECRET_KEY=una-stringa-lunga-random
+```
+
+3. Avviare:
 
 ```bash
 docker compose up -d --build
 ```
 
-3. Aprire la web app:
+4. Aprire:
 
 ```text
 https://localhost:8443
 ```
 
-Con `CERT_MODE=selfsigned` il browser mostrera' un avviso sul certificato locale. In produzione, per Let's Encrypt, configurare nel `.env`:
+Con `CERT_MODE=selfsigned` il browser mostrera' un avviso sul certificato. E' normale in ambiente locale.
 
-```env
-CERT_MODE=letsencrypt
-PUBLIC_HOSTNAME=maps.example.org
-HTTP_PORT=80
-HTTPS_PORT=443
-LETSENCRYPT_EMAIL=admin@example.org
-APP_BASE_URL=https://maps.example.org
-```
+Per dettagli completi vedere [Installazione e configurazione](docs/installation.md).
 
-La porta pubblica 80 e' necessaria per la verifica HTTP-01 di Let's Encrypt. Dopo aver puntato il DNS di `PUBLIC_HOSTNAME` al server, avviare:
+## Stato versione
 
-```bash
-docker compose up -d --build
-```
+Versione applicativa corrente: `2.1`.
 
-4. Accedere dalla UI con Nextcloud. L'utente Nextcloud indicato in `ADMIN_NC_USERNAME` diventa admin di Nextcloud Maps Companion al primo login riuscito.
-
-5. Avviare una scansione manuale:
-
-```bash
-docker compose exec backend python -m app.cli
-```
-
-Per una prova piccola senza processare tutta la libreria:
-
-```bash
-docker compose exec backend python -m app.cli --limit 5
-```
-
-Per scansionare un utente specifico:
-
-```bash
-docker compose exec backend python -m app.cli scan --user-id 1
-```
-
-In alternativa, dalla UI si puo' usare il pulsante di scansione, che chiama `POST /api/admin/scan`.
-
-## Backup e import
-
-Dal frontend sono disponibili:
-
-- `Scarica backup`, nella barra in alto;
-- `Import backup`, nel pannello filtri laterale, con checkbox di conferma sostituzione dati.
-
-Creare un backup del database applicativo:
-
-```bash
-docker compose exec backend python -m app.cli backup /data/backups/photomap-backup.json.gz
-```
-
-Il file viene salvato nel volume Docker `backup_data`, montato in `/data/backups`.
-
-Importare un backup in una nuova installazione:
-
-```bash
-docker compose exec backend python -m app.cli import /data/backups/photomap-backup.json.gz
-```
-
-L'import mostra un riepilogo del backup e chiede conferma esplicita. Per procedere bisogna digitare:
-
-```text
-IMPORT
-```
-
-Confermando, i dati attuali della tabella `photos` vengono eliminati e sostituiti con quelli del backup.
-
-## Servizi
-
-- `db`: PostgreSQL/PostGIS.
-- `backend`: FastAPI, API REST, scanner WebDAV, lettura EXIF.
-- `frontend`: Nginx con pagina Leaflet e proxy `/api`.
-
-## Stato MVP
-
-Implementato:
-
-- Docker Compose con backend, database e frontend.
-- Schema iniziale `photos` con campo PostGIS `geom`.
-- Schema multiutente con `app_users` e associazione `photos.user_id`.
-- API `/api/health`, `/api/config`, `/api/photos/map`, `/api/photos/{id}`, `/api/admin/scan`.
-- Login/registrazione tramite Nextcloud Login Flow v2 con app password cifrata localmente.
-- Scanner incrementale basato su `etag`.
-- Backup/import JSON del database applicativo con conferma distruttiva sull'import.
-- Thumbnail generate al primo accesso, salvate localmente in `/data/thumbnails` e rigenerate se cambia `etag`.
-- Frontend Leaflet con clustering, filtri minimi e link Nextcloud.
-
-Ancora da completare:
-
-- autenticazione/protezione endpoint admin;
-- gestione avanzata errori e report scansioni persistenti.
+Nome versione 2.0: `Bold Baboon`.
