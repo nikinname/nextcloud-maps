@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS app_users (
     base_path TEXT NOT NULL DEFAULT '/Photos',
     exclude_paths TEXT DEFAULT '',
     disabled BOOLEAN DEFAULT FALSE,
+    credentials_invalid BOOLEAN DEFAULT FALSE,
+    credentials_error TEXT,
+    credentials_checked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
     last_login_at TIMESTAMPTZ,
@@ -73,6 +76,9 @@ CREATE TABLE IF NOT EXISTS scan_jobs (
 
 ALTER TABLE photos ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES app_users(id);
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS disabled BOOLEAN DEFAULT FALSE;
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS credentials_invalid BOOLEAN DEFAULT FALSE;
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS credentials_error TEXT;
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS credentials_checked_at TIMESTAMPTZ;
 
 DO $$
 BEGIN

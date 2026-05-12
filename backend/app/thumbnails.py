@@ -2,12 +2,13 @@ from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 
+import httpx
 from PIL import Image, ImageOps
 
 from app.config import get_settings
 from app.database import get_conn
 from app.nextcloud_client import NextcloudClient
-from app.users import get_account
+from app.users import mark_credentials_invalid, get_account
 
 
 THUMBNAIL_SIZE = (320, 320)
@@ -34,7 +35,12 @@ def get_or_create_thumbnail(photo_id: int, user_id: int) -> Path | None:
             return cached_path
 
         client = NextcloudClient(get_account(user_id))
-        image_bytes = client.download(photo["path"])
+        try:
+            image_bytes = client.download(photo["path"])
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (401, 403):
+                mark_credentials_invalid(user_id, "Nextcloud authorization was rejected. Reconnect Nextcloud.")
+            raise
         _write_thumbnail(image_bytes, expected_path)
         conn.execute(
             "UPDATE photos SET thumbnail_cache_path = %s, has_preview = true WHERE id = %s",

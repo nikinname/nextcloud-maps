@@ -1,10 +1,12 @@
 import logging
 from pathlib import PurePosixPath
 
+import httpx
+
 from app.database import get_conn, init_db
 from app.exif_reader import read_exif
 from app.nextcloud_client import NextcloudClient, NextcloudFile
-from app.users import NextcloudAccount, get_account, get_default_account
+from app.users import CredentialsInvalidError, NextcloudAccount, get_account, get_default_account, mark_credentials_invalid
 
 
 logger = logging.getLogger(__name__)
@@ -38,12 +40,11 @@ def scan(
 ) -> dict[str, int]:
     logger.info("Initializing database")
     init_db()
-    account = get_account(user_id) if user_id is not None else get_default_account()
-    job_id = job_id or create_scan_job(account.user_id, started_by, status="running")
-    _update_scan_job(job_id, status="running")
-    client = NextcloudClient(account)
+    account: NextcloudAccount | None = None
+    if job_id is not None:
+        _update_scan_job(job_id, status="running")
     stats = {
-        "job_id": job_id,
+        "job_id": job_id or 0,
         "seen": 0,
         "inserted_or_updated": 0,
         "unchanged": 0,
@@ -53,6 +54,10 @@ def scan(
     }
 
     try:
+        account = get_account(user_id) if user_id is not None else get_default_account()
+        job_id = job_id or create_scan_job(account.user_id, started_by, status="running")
+        stats["job_id"] = job_id
+        client = NextcloudClient(account)
         logger.info("Listing Nextcloud files for user %s under %s", account.login_name, account.base_path)
         items = [item for item in client.list_recursive(account.base_path) if _is_allowed_image(item, account)]
         if limit is not None:
@@ -112,6 +117,10 @@ def scan(
                 }
                 try:
                     exif = read_exif(client.download(item.path))
+                except httpx.HTTPStatusError as exc:
+                    _mark_auth_failure(account.user_id, exc)
+                    stats["exif_errors"] += 1
+                    logger.warning("Download failed for %s: %s", item.path, exc)
                 except Exception as exc:
                     stats["exif_errors"] += 1
                     logger.warning("EXIF read failed for %s: %s", item.path, exc)
@@ -223,8 +232,15 @@ def scan(
             stats["exif_errors"],
         )
         return stats
+    except (CredentialsInvalidError, httpx.HTTPStatusError) as exc:
+        if account is not None and isinstance(exc, httpx.HTTPStatusError):
+            _mark_auth_failure(account.user_id, exc)
+        if job_id is not None:
+            _finish_scan_job(job_id, "failed", error_message=str(exc), **_job_stats(stats))
+        raise
     except Exception as exc:
-        _finish_scan_job(job_id, "failed", error_message=str(exc), **_job_stats(stats))
+        if job_id is not None:
+            _finish_scan_job(job_id, "failed", error_message=str(exc), **_job_stats(stats))
         raise
 
 
@@ -272,3 +288,8 @@ def _job_stats(stats: dict[str, int]) -> dict[str, int]:
         "without_gps": stats["without_gps"],
         "exif_errors": stats["exif_errors"],
     }
+
+
+def _mark_auth_failure(user_id: int, exc: httpx.HTTPStatusError) -> None:
+    if exc.response.status_code in (401, 403):
+        mark_credentials_invalid(user_id, "Nextcloud authorization was rejected. Reconnect Nextcloud.")

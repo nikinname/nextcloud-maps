@@ -19,6 +19,9 @@ USER_COLUMNS = [
     "base_path",
     "exclude_paths",
     "disabled",
+    "credentials_invalid",
+    "credentials_error",
+    "credentials_checked_at",
     "created_at",
     "updated_at",
     "last_login_at",
@@ -112,6 +115,10 @@ def import_backup(path: str | Path, confirmed: bool = False) -> dict[str, Any]:
     with get_conn() as conn:
         if users:
             conn.execute("TRUNCATE photos, app_users RESTART IDENTITY CASCADE")
+            for user in users:
+                user.setdefault("credentials_invalid", False)
+                user.setdefault("credentials_error", None)
+                user.setdefault("credentials_checked_at", None)
             with conn.cursor() as cursor:
                 cursor.executemany(
                     f"INSERT INTO app_users ({users_columns_sql}) VALUES ({users_placeholders})",

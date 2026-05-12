@@ -8,7 +8,7 @@ from pydantic import AnyHttpUrl, BaseModel
 
 from app.auth import clear_session_cookie, current_user, set_session_cookie
 from app.config import get_settings
-from app.users import get_or_create_user_from_nextcloud
+from app.users import get_or_create_user_from_nextcloud, get_user, validate_stored_credentials
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -27,12 +27,16 @@ class LoginPollRequest(BaseModel):
 
 @router.get("/me")
 def me(user: dict[str, Any] = Depends(current_user)):
+    validate_stored_credentials(int(user["id"]))
+    user = get_user(int(user["id"])) or user
     return {
         "id": user["id"],
         "loginName": user["nextcloud_login_name"],
         "displayName": user["display_name"],
         "role": user["role"],
         "basePath": user["base_path"],
+        "credentialsInvalid": user["credentials_invalid"],
+        "credentialsError": user["credentials_error"],
     }
 
 
@@ -109,6 +113,8 @@ def poll_nextcloud_login(payload: LoginPollRequest, response: Response):
             "displayName": user["display_name"],
             "role": user["role"],
             "basePath": user["base_path"],
+            "credentialsInvalid": user["credentials_invalid"],
+            "credentialsError": user["credentials_error"],
         },
     }
 

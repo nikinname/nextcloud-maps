@@ -5,6 +5,9 @@ const appShell = document.querySelector("#appShell");
 const loginButton = document.querySelector("#loginButton");
 const resumeButton = document.querySelector("#resumeButton");
 const logoutButton = document.querySelector("#logoutButton");
+const credentialsBanner = document.querySelector("#credentialsBanner");
+const credentialsMessage = document.querySelector("#credentialsMessage");
+const reconnectButton = document.querySelector("#reconnectButton");
 const backupLink = document.querySelector("#backupLink");
 const adminToolbox = document.querySelector("#adminToolbox");
 const nextcloudUrl = document.querySelector("#nextcloudUrl");
@@ -119,6 +122,7 @@ function showLogin() {
   adminToolbox.hidden = true;
   userBadge.hidden = true;
   adminReportPanel.hidden = true;
+  credentialsBanner.hidden = true;
   statusEl.textContent = "Accesso richiesto";
 }
 
@@ -134,7 +138,16 @@ function showApp() {
   adminReportPanel.hidden = true;
   userBadge.hidden = false;
   userBadge.textContent = currentUser.displayName || currentUser.loginName;
+  updateCredentialsBanner();
   statusEl.textContent = "Caricamento foto...";
+}
+
+function updateCredentialsBanner() {
+  const invalid = Boolean(currentUser?.credentialsInvalid);
+  credentialsBanner.hidden = !invalid;
+  if (invalid) {
+    credentialsMessage.textContent = currentUser.credentialsError || "Account Nextcloud da ricollegare.";
+  }
 }
 
 async function pollLogin(flowId) {
@@ -167,8 +180,8 @@ async function enterApp(user) {
   await initMap(config);
 }
 
-loginButton.addEventListener("click", async () => {
-  loginButton.disabled = true;
+async function startNextcloudAuthorization(button) {
+  button.disabled = true;
   statusEl.textContent = "Apro il login Nextcloud...";
   try {
     const payload = {};
@@ -186,8 +199,16 @@ loginButton.addEventListener("click", async () => {
   } catch (error) {
     statusEl.textContent = `Errore login: ${error.message}`;
   } finally {
-    loginButton.disabled = false;
+    button.disabled = false;
   }
+}
+
+loginButton.addEventListener("click", () => {
+  startNextcloudAuthorization(loginButton);
+});
+
+reconnectButton.addEventListener("click", () => {
+  startNextcloudAuthorization(reconnectButton);
 });
 
 resumeButton.addEventListener("click", async () => {
@@ -288,11 +309,13 @@ function reportHtml(report) {
 }
 
 function userRowHtml(user) {
+  const credentialState = user.credentials_invalid ? `<span class="warning-text">${escapeHtml(user.credentials_error || "Da ricollegare")}</span>` : "";
   return `
     <tr>
       <td>
         <strong>${escapeHtml(user.display_name || user.nextcloud_login_name)}</strong>
         <span>${escapeHtml(user.nextcloud_server_url || "")}</span>
+        ${credentialState}
       </td>
       <td>${escapeHtml(user.role)}${user.disabled ? " / disabilitato" : ""}</td>
       <td>${Number(user.photos_total || 0)}</td>
