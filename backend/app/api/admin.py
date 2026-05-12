@@ -79,7 +79,12 @@ def admin_report(admin: dict[str, Any] = Depends(current_admin)):
                 u.created_at,
                 u.last_login_at,
                 count(p.id) FILTER (WHERE p.deleted = false) AS photos_total,
-                count(p.id) FILTER (WHERE p.deleted = false AND p.has_gps = true) AS photos_with_gps,
+                count(p.id) FILTER (
+                    WHERE p.deleted = false
+                      AND p.has_gps = true
+                      AND p.latitude BETWEEN -90 AND 90
+                      AND p.longitude BETWEEN -180 AND 180
+                ) AS photos_with_gps,
                 count(p.id) FILTER (WHERE p.deleted = true) AS photos_deleted,
                 max(p.indexed_at) AS last_indexed_at
             FROM app_users u

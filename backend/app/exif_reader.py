@@ -27,6 +27,15 @@ def _dms_to_decimal(values: Any, ref: str) -> float:
     return decimal
 
 
+def _valid_coordinate(latitude: float | None, longitude: float | None) -> bool:
+    return (
+        latitude is not None
+        and longitude is not None
+        and -90 <= latitude <= 90
+        and -180 <= longitude <= 180
+    )
+
+
 def _parse_taken_at(value: Any) -> datetime | None:
     if not value:
         return None
@@ -53,6 +62,9 @@ def read_exif(image_bytes: bytes) -> dict[str, Any]:
     if gps.get("GPSLatitude") and gps.get("GPSLatitudeRef") and gps.get("GPSLongitude") and gps.get("GPSLongitudeRef"):
         latitude = _dms_to_decimal(gps["GPSLatitude"], gps["GPSLatitudeRef"])
         longitude = _dms_to_decimal(gps["GPSLongitude"], gps["GPSLongitudeRef"])
+        if not _valid_coordinate(latitude, longitude):
+            latitude = None
+            longitude = None
 
     altitude = None
     if gps.get("GPSAltitude") is not None:
@@ -68,5 +80,5 @@ def read_exif(image_bytes: bytes) -> dict[str, Any]:
         "camera_make": exif.get("Make"),
         "camera_model": exif.get("Model"),
         "orientation": str(exif.get("Orientation")) if exif.get("Orientation") else None,
-        "has_gps": latitude is not None and longitude is not None,
+        "has_gps": _valid_coordinate(latitude, longitude),
     }

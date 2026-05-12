@@ -18,7 +18,13 @@ def map_photos(
     limit: int = Query(default=10000, ge=1, le=10000),
     user: dict[str, Any] = Depends(current_user),
 ):
-    where = ["user_id = %s", "has_gps = true", "deleted = false"]
+    where = [
+        "user_id = %s",
+        "has_gps = true",
+        "deleted = false",
+        "latitude BETWEEN -90 AND 90",
+        "longitude BETWEEN -180 AND 180",
+    ]
     params: list[object] = [user["id"]]
     if from_date:
         where.append("taken_at >= %s")

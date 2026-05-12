@@ -67,15 +67,23 @@ async function loadPhotos() {
 
   const photos = await fetchJson(`/api/photos/map?${params.toString()}`);
   cluster.clearLayers();
-  photos.forEach((photo) => {
+  const validPhotos = photos.filter((photo) => (
+    Number.isFinite(photo.latitude)
+    && Number.isFinite(photo.longitude)
+    && photo.latitude >= -90
+    && photo.latitude <= 90
+    && photo.longitude >= -180
+    && photo.longitude <= 180
+  ));
+  validPhotos.forEach((photo) => {
     const marker = L.marker([photo.latitude, photo.longitude]);
     marker.bindPopup(popupHtml(photo), { maxWidth: 280 });
     cluster.addLayer(marker);
   });
-  if (photos.length) {
+  if (validPhotos.length) {
     map.fitBounds(cluster.getBounds(), { padding: [24, 24], maxZoom: 15 });
   }
-  statusEl.textContent = `${photos.length} foto geolocalizzate`;
+  statusEl.textContent = `${validPhotos.length} foto geolocalizzate`;
 }
 
 async function init() {
