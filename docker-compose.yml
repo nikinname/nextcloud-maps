@@ -1,6 +1,7 @@
 services:
   db:
     image: postgis/postgis:16-3.4
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-photomap}
       POSTGRES_USER: ${POSTGRES_USER:-photomap}
@@ -15,6 +16,7 @@ services:
 
   backend:
     build: ./backend
+    restart: unless-stopped
     env_file:
       - path: .env
         required: false
@@ -29,6 +31,7 @@ services:
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     env_file:
       - path: .env
         required: false
